@@ -62,7 +62,7 @@ function readApiProfileJson(text: string) {
 
 function decodeBase64Text(value: string) {
   const normalized = value.trim().replace(/^data:[^,]+,/, '').replace(/\s+/g, '')
-  if (!normalized) throw new Error('文件内容为空')
+  if (!normalized) throw new Error('Base64 内容为空')
 
   try {
     const binary = atob(normalized)
@@ -337,7 +337,6 @@ export default function SettingsModal() {
   const setConfirmDialog = useStore((s) => s.setConfirmDialog)
   const showToast = useStore((s) => s.showToast)
   const importInputRef = useRef<HTMLInputElement>(null)
-  const apiProfileFileInputRef = useRef<HTMLInputElement>(null)
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const profileMenuTriggerRef = useRef<HTMLButtonElement>(null)
 
@@ -351,6 +350,7 @@ export default function SettingsModal() {
   const [draft, setDraft] = useState<AppSettings>(normalizeSettings(settings))
   const [timeoutInput, setTimeoutInput] = useState(String(getActiveApiProfile(settings).timeout))
   const [agentMaxToolRoundsInput, setAgentMaxToolRoundsInput] = useState(String(settings.agentMaxToolRounds))
+  const [apiProfileBase64Input, setApiProfileBase64Input] = useState('')
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [profileMenuMaxHeight, setProfileMenuMaxHeight] = useState(DEFAULT_DROPDOWN_MAX_HEIGHT)
   const [showCustomProviderImport, setShowCustomProviderImport] = useState(false)
@@ -705,14 +705,10 @@ export default function SettingsModal() {
     showToast('API 配置已导入', 'success')
   }
 
-  const handleApiProfileFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-
+  const handleApiProfileBase64Import = () => {
     try {
-      const text = await file.text()
-      applyImportedApiProfile(readApiProfileJson(decodeBase64Text(text)))
+      applyImportedApiProfile(readApiProfileJson(decodeBase64Text(apiProfileBase64Input)))
+      setApiProfileBase64Input('')
     } catch (err) {
       showToast(`导入失败：${err instanceof Error ? err.message : String(err)}`, 'error')
     }
@@ -1668,7 +1664,7 @@ export default function SettingsModal() {
 
               <div className="block">
                 <div className="mb-1.5 flex items-center justify-between gap-3">
-                  <span className="block text-sm text-gray-600 dark:text-gray-300">导入 API 配置文件</span>
+                  <span className="block text-sm text-gray-600 dark:text-gray-300">导入 API 配置</span>
                 </div>
                 <div className="rounded-xl border border-gray-200/70 bg-gray-50/70 px-3 py-2.5 dark:border-white/[0.08] dark:bg-white/[0.03]">
                   <div className="text-xs text-gray-500 dark:text-gray-500">当前配置</div>
@@ -1676,22 +1672,20 @@ export default function SettingsModal() {
                     {activeProfile.name}
                   </div>
                 </div>
-                <div data-selectable-text className="mt-1.5 text-xs leading-relaxed text-gray-500 dark:text-gray-500">
-                  请选择 Base64 编码的 <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">.txt</code> 配置文件。导入后只展示配置名，并覆盖当前选中的配置；接口固定为 Images API，模型固定为 <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">{DEFAULT_IMAGES_MODEL}</code>。
-                </div>
-                <input
-                  ref={apiProfileFileInputRef}
-                  type="file"
-                  accept=".txt,text/plain"
-                  className="hidden"
-                  onChange={handleApiProfileFileImport}
+                <textarea
+                  value={apiProfileBase64Input}
+                  onChange={(e) => setApiProfileBase64Input(e.target.value)}
+                  rows={4}
+                  spellCheck={false}
+                  placeholder="粘贴请求密钥"
+                  className="mt-3 w-full resize-none rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 font-mono text-xs leading-relaxed text-gray-700 outline-none transition placeholder:text-gray-400 focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-blue-500/50"
                 />
                 <button
                   type="button"
-                  onClick={() => apiProfileFileInputRef.current?.click()}
+                  onClick={handleApiProfileBase64Import}
                   className="mt-3 w-full rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
                 >
-                  选择文件并导入
+                  导入配置
                 </button>
               </div>
 
