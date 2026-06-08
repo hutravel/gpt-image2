@@ -573,7 +573,8 @@ export default function SettingsModal() {
           : DEFAULT_SETTINGS.timeout,
         apiMode: 'images',
         apiProxy: nextApiProxy,
-        codexCli: false,
+        codexCli: profile.codexCli === true,
+        responseFormatB64Json: profile.responseFormatB64Json === true ? true : undefined,
         streamImages: profile.streamImages === true,
         streamPartialImages: normalizeStreamPartialImages(profile.streamPartialImages),
       }
@@ -1732,6 +1733,42 @@ export default function SettingsModal() {
 
               {activeProviderIsOpenAICompatible && (
                 <div className="block space-y-3">
+                  <div>
+                    <div className="mb-1.5 flex items-center justify-between gap-3">
+                      <span className="block text-sm text-gray-600 dark:text-gray-300">Codex CLI</span>
+                      <button
+                        type="button"
+                        onClick={() => updateActiveProfile({ codexCli: !activeProfile.codexCli }, true)}
+                        className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${activeProfile.codexCli ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                        role="switch"
+                        aria-checked={!!activeProfile.codexCli}
+                        aria-label="Codex CLI"
+                      >
+                        <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${activeProfile.codexCli ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
+                      </button>
+                    </div>
+                    <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
+                      默认关闭。开启后会使用更接近 Codex/Responses 图像工具的请求格式，部分 OpenAI 兼容中转可能不支持。
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1.5 flex items-center justify-between gap-3">
+                      <span className="block text-sm text-gray-600 dark:text-gray-300">返回 Base64</span>
+                      <button
+                        type="button"
+                        onClick={() => updateActiveProfile({ responseFormatB64Json: activeProfile.responseFormatB64Json ? undefined : true }, true)}
+                        className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${activeProfile.responseFormatB64Json ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                        role="switch"
+                        aria-checked={!!activeProfile.responseFormatB64Json}
+                        aria-label="返回 Base64"
+                      >
+                        <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${activeProfile.responseFormatB64Json ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
+                      </button>
+                    </div>
+                    <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
+                      默认关闭。开启后请求接口直接返回 b64_json 图片数据，可避开图片 URL 访问限制，但响应体会更大。
+                    </div>
+                  </div>
                   <div>
                     <div className="mb-1.5 flex items-center justify-between gap-3">
                       <span className="block text-sm text-gray-600 dark:text-gray-300">流式传输</span>
