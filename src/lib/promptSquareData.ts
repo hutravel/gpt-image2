@@ -1,4 +1,4 @@
-export const PAGE_SIZE = 20
+export const PAGE_SIZE = 8
 export const DEFAULT_IMAGE_ASPECT_RATIO = '4 / 3'
 
 const CURRENT_IMAGE_REPO_BASE_URL = 'https://raw.githubusercontent.com/mrslimslim/awesome-prompt/main'
@@ -10,6 +10,16 @@ export const PROMPT_SOURCES = [
     label: 'MeiGen',
     description: '本地提示词集合',
     dataUrl: './data/prompts-images.json',
+    chunkUrls: [
+      './data/prompts-images-1.json',
+      './data/prompts-images-2.json',
+      './data/prompts-images-3.json',
+      './data/prompts-images-4.json',
+      './data/prompts-images-5.json',
+      './data/prompts-images-6.json',
+      './data/prompts-images-7.json',
+    ],
+    chunkSize: 500,
     repoUrl: 'https://github.com/mrslimslim/awesome-prompt',
     imageBaseUrl: CURRENT_IMAGE_REPO_BASE_URL,
   },
@@ -53,6 +63,7 @@ export interface SquarePrompt {
   mode: SquareMode
   nsfw: boolean
   referenceImageUrls: string[]
+  searchText?: string
 }
 
 export const FALLBACK_PROMPTS: SquarePrompt[] = [
@@ -225,6 +236,10 @@ function inferNsfw(record: Record<string, unknown>, title: string, prompt: strin
   return NSFW_RE.test(`${title} ${prompt} ${category} ${tags.join(' ')}`)
 }
 
+export function getPromptSearchText(item: Pick<SquarePrompt, 'title' | 'prompt' | 'sourceLabel' | 'category' | 'subCategory' | 'tags'>): string {
+  return `${item.title} ${item.prompt} ${item.sourceLabel} ${item.category} ${item.subCategory ?? ''} ${item.tags.join(' ')}`.toLowerCase()
+}
+
 export function getPromptSource(id: PromptSourceId): PromptSource {
   return PROMPT_SOURCES.find((source) => source.id === id) ?? PROMPT_SOURCES[0]
 }
@@ -250,7 +265,7 @@ export function normalizePromptItem(item: unknown, index: number, source: Prompt
   const category = inferCategory(record, tags)
   const mode = inferMode(record, prompt, referenceImageUrls)
 
-  return {
+  const normalized: SquarePrompt = {
     id: `${source.id}-${getString(record.id) || getString(record.slug) || getString(record.tweet_url) || index}`,
     title,
     prompt,
@@ -268,19 +283,11 @@ export function normalizePromptItem(item: unknown, index: number, source: Prompt
     nsfw: inferNsfw(record, title, prompt, tags, category),
     referenceImageUrls,
   }
+  normalized.searchText = getPromptSearchText(normalized)
+  return normalized
 }
 
-export function normalizePromptData(data: unknown, source: PromptSource): SquarePrompt[] {
-  const rawItems = Array.isArray(data)
-    ? data
-    : data && typeof data === 'object'
-      ? Object.values(data as Record<string, unknown>).flatMap((value) => Array.isArray(value) ? value : [])
-      : []
-
-  const items = rawItems
-    .map((item, index) => normalizePromptItem(item, index, source))
-    .filter((item): item is SquarePrompt => Boolean(item))
-
+export function dedupePromptItems(items: SquarePrompt[]): SquarePrompt[] {
   const seen = new Set<string>()
   return items.filter((item) => {
     const key = `${item.imageUrl}\n${item.prompt}`
@@ -288,6 +295,20 @@ export function normalizePromptData(data: unknown, source: PromptSource): Square
     seen.add(key)
     return true
   })
+}
+
+export function normalizePromptData(data: unknown, source: PromptSource, options?: { startIndex?: number }): SquarePrompt[] {
+  const rawItems = Array.isArray(data)
+    ? data
+    : data && typeof data === 'object'
+      ? Object.values(data as Record<string, unknown>).flatMap((value) => Array.isArray(value) ? value : [])
+      : []
+
+  const items = rawItems
+    .map((item, index) => normalizePromptItem(item, index + (options?.startIndex ?? 0), source))
+    .filter((item): item is SquarePrompt => Boolean(item))
+
+  return dedupePromptItems(items)
 }
 
 export function getImageAspectRatio(item: SquarePrompt): string {

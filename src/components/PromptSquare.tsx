@@ -4,7 +4,9 @@ import {
   FALLBACK_PROMPTS,
   PAGE_SIZE,
   PROMPT_SOURCES,
+  dedupePromptItems,
   getImageAspectRatio,
+  getPromptSearchText,
   getPromptSource,
   normalizePromptData,
   type PromptSource,
@@ -19,6 +21,10 @@ import { ArrowDownIcon, CloseIcon, CopyIcon, EditIcon, ExternalLinkIcon, Refresh
 type LanguageFilter = 'all' | Exclude<SquareLanguage, 'unknown'>
 type ModeFilter = 'all' | SquareMode
 type NsfwFilter = 'show' | 'hide' | 'only'
+type PromptCacheEntry = {
+  items: SquarePrompt[]
+  loadedAt: number
+}
 
 const LANGUAGE_OPTIONS: Array<{ value: LanguageFilter; label: string }> = [
   { value: 'all', label: '全部语言' },
@@ -37,6 +43,14 @@ const NSFW_OPTIONS: Array<{ value: NsfwFilter; label: string }> = [
   { value: 'hide', label: '隐藏 NSFW' },
   { value: 'only', label: '仅 NSFW' },
 ]
+
+const promptCache = new Map<PromptSourceId, PromptCacheEntry>()
+const PROMPT_CACHE_TTL = 5 * 60 * 1000
+const LOAD_MORE_SIZE = 8
+
+function getSourceChunkUrls(source: PromptSource): string[] {
+  return 'chunkUrls' in source && Array.isArray(source.chunkUrls) ? source.chunkUrls : []
+}
 
 function SquareImage({
   src,
@@ -76,11 +90,13 @@ function SquareImage({
                 setRetryKey((key) => key + 1)
               }}
               className="rounded-md border border-gray-200 bg-white/80 px-3 py-1.5 text-gray-500 transition hover:bg-white hover:text-gray-800 dark:border-white/[0.08] dark:bg-gray-900/80 dark:text-gray-400 dark:hover:text-gray-100"
-            >
+              >
               图片加载失败，点击重试
-            </button>
+              </button>
           ) : (
-            <div className="h-full w-full animate-pulse bg-gray-200/70 dark:bg-white/[0.06]" />
+            <div className="flex h-full w-full items-center justify-center bg-gray-200/70 dark:bg-white/[0.06]">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500 dark:border-white/25 dark:border-t-white" />
+            </div>
           )}
         </div>
       )}
@@ -148,6 +164,7 @@ export default function PromptSquare() {
   const [applying, setApplying] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [deferredQuery, setDeferredQuery] = useState('')
   const [languageFilter, setLanguageFilter] = useState<LanguageFilter>('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [modeFilter, setModeFilter] = useState<ModeFilter>('all')
@@ -156,6 +173,7 @@ export default function PromptSquare() {
   const [showBackToTop, setShowBackToTop] = useState(false)
   const loadAbortRef = useRef<AbortController | null>(null)
   const loadRequestIdRef = useRef(0)
+  const loadMoreRef = useRef<HTMLDivElement | null>(null)
   const activeSource = getPromptSource(activeSourceId)
 
   const resetSourceState = () => {
@@ -168,32 +186,81 @@ export default function PromptSquare() {
     setVisibleCount(PAGE_SIZE)
   }
 
-  const loadPrompts = async (source: PromptSource = activeSource, options?: { clear?: boolean }) => {
+  const loadPrompts = async (source: PromptSource = activeSource, options?: { clear?: boolean; force?: boolean }) => {
     const requestId = loadRequestIdRef.current + 1
     loadRequestIdRef.current = requestId
     loadAbortRef.current?.abort()
-    const controller = new AbortController()
-    loadAbortRef.current = controller
+    loadAbortRef.current = null
 
-    setLoading(true)
     setError(null)
     if (options?.clear) {
       setItems([])
       resetSourceState()
     }
 
+    const cached = promptCache.get(source.id)
+    if (!options?.force && cached && Date.now() - cached.loadedAt < PROMPT_CACHE_TTL) {
+      setItems(cached.items)
+      setVisibleCount(PAGE_SIZE)
+      setLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    loadAbortRef.current = controller
+    setLoading(true)
+
     try {
+      const chunkUrls = getSourceChunkUrls(source)
+      if (chunkUrls.length > 0) {
+        const firstResponse = await fetch(chunkUrls[0], { signal: controller.signal })
+        if (!firstResponse.ok) throw new Error(`HTTP ${firstResponse.status}`)
+        const chunkSize = 'chunkSize' in source && typeof source.chunkSize === 'number' ? source.chunkSize : 0
+        const firstItems = normalizePromptData(await firstResponse.json(), source)
+        if (firstItems.length === 0) throw new Error('没有解析到可展示的提示词')
+        if (requestId !== loadRequestIdRef.current) return
+        setItems(firstItems)
+        setVisibleCount(PAGE_SIZE)
+        setLoading(false)
+
+        try {
+          const restItems = await Promise.all(
+            chunkUrls.slice(1).map(async (url, index) => {
+              const response = await fetch(url, { signal: controller.signal })
+              if (!response.ok) throw new Error(`HTTP ${response.status}`)
+              return normalizePromptData(await response.json(), source, {
+                startIndex: chunkSize > 0 ? (index + 1) * chunkSize : firstItems.length,
+              })
+            }),
+          )
+          const normalized = dedupePromptItems([...firstItems, ...restItems.flat()])
+          if (requestId !== loadRequestIdRef.current) return
+          promptCache.set(source.id, { items: normalized, loadedAt: Date.now() })
+          setItems(normalized)
+        } catch (err) {
+          if ((err as { name?: string })?.name === 'AbortError' || requestId !== loadRequestIdRef.current) return
+          promptCache.set(source.id, { items: firstItems, loadedAt: Date.now() })
+          setError(`部分数据加载失败：${err instanceof Error ? err.message : String(err)}`)
+        }
+        return
+      }
+
       const response = await fetch(source.dataUrl, { signal: controller.signal })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const normalized = normalizePromptData(await response.json(), source)
       if (normalized.length === 0) throw new Error('没有解析到可展示的提示词')
       if (requestId !== loadRequestIdRef.current) return
+      promptCache.set(source.id, { items: normalized, loadedAt: Date.now() })
       setItems(normalized)
       setVisibleCount(PAGE_SIZE)
     } catch (err) {
       if ((err as { name?: string })?.name === 'AbortError' || requestId !== loadRequestIdRef.current) return
       setError(err instanceof Error ? err.message : String(err))
-      setItems(FALLBACK_PROMPTS)
+      const fallbackItems = FALLBACK_PROMPTS.map((item) => ({
+        ...item,
+        searchText: item.searchText ?? getPromptSearchText(item),
+      }))
+      setItems(fallbackItems)
       setVisibleCount(PAGE_SIZE)
     } finally {
       if (requestId === loadRequestIdRef.current) {
@@ -211,6 +278,15 @@ export default function PromptSquare() {
     return () => loadAbortRef.current?.abort()
   }, [])
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDeferredQuery(query), 180)
+    return () => window.clearTimeout(timeoutId)
+  }, [query])
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [activeSourceId])
+
   const categoryOptions = useMemo(() => {
     const counts = new Map<string, number>()
     for (const item of items) counts.set(item.category, (counts.get(item.category) ?? 0) + 1)
@@ -224,9 +300,9 @@ export default function PromptSquare() {
   }, [categoryFilter, categoryOptions])
 
   const filteredItems = useMemo(() => {
-    const keyword = query.trim().toLowerCase()
+    const keyword = deferredQuery.trim().toLowerCase()
     return items.filter((item) => {
-      if (keyword && !`${item.title} ${item.prompt} ${item.sourceLabel} ${item.category} ${item.subCategory ?? ''} ${item.tags.join(' ')}`.toLowerCase().includes(keyword)) return false
+      if (keyword && !(item.searchText ?? getPromptSearchText(item)).includes(keyword)) return false
       if (languageFilter !== 'all' && item.language !== languageFilter) return false
       if (categoryFilter !== 'all' && item.category !== categoryFilter) return false
       if (modeFilter !== 'all' && item.mode !== modeFilter) return false
@@ -234,13 +310,13 @@ export default function PromptSquare() {
       if (nsfwFilter === 'only' && !item.nsfw) return false
       return true
     })
-  }, [items, query, languageFilter, categoryFilter, modeFilter, nsfwFilter])
+  }, [items, deferredQuery, languageFilter, categoryFilter, modeFilter, nsfwFilter])
   const visibleItems = filteredItems.slice(0, visibleCount)
   const hasMore = visibleCount < filteredItems.length
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE)
-  }, [query, languageFilter, categoryFilter, modeFilter, nsfwFilter, activeSourceId])
+  }, [deferredQuery, languageFilter, categoryFilter, modeFilter, nsfwFilter, activeSourceId])
 
   useEffect(() => {
     if (!selected) return
@@ -258,6 +334,21 @@ export default function PromptSquare() {
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
+
+  useEffect(() => {
+    const target = loadMoreRef.current
+    if (!target || !hasMore || loading) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        setVisibleCount((count) => Math.min(count + LOAD_MORE_SIZE, filteredItems.length))
+      },
+      { rootMargin: '480px 0px' },
+    )
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [filteredItems.length, hasMore, loading, visibleCount])
 
   const copyPrompt = async (prompt: string) => {
     try {
@@ -290,7 +381,12 @@ export default function PromptSquare() {
       setSelected(null)
       showToast('已套用提示词和参考图', 'success')
     } catch (err) {
-      showToast(`套用失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+      setAppMode('gallery')
+      setInputImages([])
+      setPrompt(item.prompt)
+      setSelected(null)
+      const reason = err instanceof Error ? err.message : String(err)
+      showToast(`参考图加载失败，已仅套用提示词：${reason}`, 'info')
     } finally {
       setApplying(false)
     }
@@ -343,7 +439,7 @@ export default function PromptSquare() {
                 />
                 <button
                   type="button"
-                  onClick={() => void loadPrompts(activeSource)}
+                  onClick={() => void loadPrompts(activeSource, { force: true })}
                   className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-gray-800 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-200"
                   title="刷新"
                   aria-label="刷新广场"
@@ -456,17 +552,11 @@ export default function PromptSquare() {
         </div>
       )}
 
-      {hasMore && (
-        <div className="mt-2 flex justify-center pb-4">
-          <button
-            type="button"
-            onClick={() => setVisibleCount((count) => Math.min(count + PAGE_SIZE, filteredItems.length))}
-            className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06] dark:hover:text-white"
-          >
-            加载更多
-          </button>
-        </div>
-      )}
+      <div ref={loadMoreRef} className="flex h-10 items-center justify-center pb-4">
+        {hasMore && !loading && (
+          <span className="text-xs text-gray-400 dark:text-gray-500">下拉继续加载</span>
+        )}
+      </div>
 
       {selected && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={() => setSelected(null)}>
