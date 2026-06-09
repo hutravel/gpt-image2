@@ -97,6 +97,16 @@ export function EditIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function PaintBrushIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.5 3.5a2.1 2.1 0 013 3L13 15l-4-4 8.5-8.5z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l-2.5 2.5c-.9.9-2.1 1.4-3.4 1.4H5.5v-.6c0-1.3.5-2.5 1.4-3.4L10 11" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 21c2.5 0 4.5-.8 5.7-2.3" />
+    </svg>
+  )
+}
+
 export function RefreshIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
@@ -249,4 +259,3 @@ export function TransparentBgIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   )
 }
-

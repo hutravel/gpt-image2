@@ -1036,9 +1036,9 @@ export default function AgentWorkspace() {
                       }`}
                       >
                     <div className="mb-2 flex items-center justify-between gap-4 text-sm text-gray-500 dark:text-gray-400">
-                      <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedRoundId(message.roundId); }} className="hover:text-gray-800 dark:hover:text-gray-200 transition-colors font-medium">
+                      <div className="font-medium">
                          <span className={isAssistant ? 'text-blue-600 dark:text-blue-400 font-semibold' : 'text-gray-700 dark:text-gray-200 font-semibold'}>{isAssistant ? 'Agent' : '用户'}</span> <span className="opacity-60 font-normal ml-1">· 第 {round?.index ?? '?'} 轮</span>
-                      </button>
+                      </div>
                     </div>
                     
                     {message.role === 'user' && round && round.inputImageIds.length > 0 && (

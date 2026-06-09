@@ -1,187 +1,41 @@
 import { useEffect, useMemo, useState } from 'react'
 import { copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboard'
-import { useStore } from '../store'
-import { CloseIcon, CopyIcon, ExternalLinkIcon, RefreshIcon } from './icons'
+import {
+  FALLBACK_PROMPTS,
+  PAGE_SIZE,
+  PROMPT_SOURCES,
+  getImageAspectRatio,
+  getPromptSource,
+  normalizePromptData,
+  type PromptSourceId,
+  type SquareLanguage,
+  type SquareMode,
+  type SquarePrompt,
+} from '../lib/promptSquareData'
+import { createInputImageFromUrl, useStore } from '../store'
+import { ArrowDownIcon, CloseIcon, CopyIcon, EditIcon, ExternalLinkIcon, RefreshIcon } from './icons'
 
-const CURRENT_IMAGE_REPO_BASE_URL = 'https://raw.githubusercontent.com/mrslimslim/awesome-prompt/main'
-const EVOLINK_IMAGE_REPO_BASE_URL = 'https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/main'
-const EVOLINK_REPO_URL = 'https://github.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts'
-const PAGE_SIZE = 40
-const DEFAULT_IMAGE_ASPECT_RATIO = '4 / 3'
+type LanguageFilter = 'all' | Exclude<SquareLanguage, 'unknown'>
+type ModeFilter = 'all' | SquareMode
+type NsfwFilter = 'show' | 'hide' | 'only'
 
-const PROMPT_SOURCES = [
-  {
-    id: 'current',
-    label: 'MeiGen',
-    description: '本地提示词集合',
-    dataUrl: './data/prompts-images.json',
-    repoUrl: 'https://github.com/mrslimslim/awesome-prompt',
-    imageBaseUrl: CURRENT_IMAGE_REPO_BASE_URL,
-  },
-  {
-    id: 'evolink',
-    label: 'EvoLinkAI',
-    description: 'awesome-gpt-image-2-API-and-Prompts',
-    dataUrl: 'https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/main/data/ingested_tweets.json',
-    repoUrl: EVOLINK_REPO_URL,
-    imageBaseUrl: EVOLINK_IMAGE_REPO_BASE_URL,
-  },
-] as const
-
-type PromptSource = typeof PROMPT_SOURCES[number]
-type PromptSourceId = PromptSource['id']
-
-interface SquarePrompt {
-  id: string
-  title: string
-  prompt: string
-  imageUrl: string
-  imageWidth?: number
-  imageHeight?: number
-  sourceUrl?: string
-  sourceId: PromptSourceId
-  sourceLabel: string
-  tags: string[]
-}
-
-const FALLBACK_PROMPTS: SquarePrompt[] = [
-  {
-    id: 'fallback-campaign-key-visual',
-    title: '夏季活动主视觉',
-    prompt: 'A refreshing summer campaign key visual for an ecommerce homepage, bright natural light, clean product stage, citrus colors, premium commercial photography, high detail, no text.',
-    imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=80',
-    sourceId: 'current',
-    sourceLabel: '本地示例',
-    tags: ['活动', '主视觉', '电商'],
-  },
-  {
-    id: 'fallback-product-lifestyle',
-    title: '生活方式产品图',
-    prompt: 'A minimalist lifestyle product photo on a warm kitchen counter, soft morning sunlight, elegant shadows, editorial composition, premium brand tone, realistic photography.',
-    imageUrl: 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&w=900&q=80',
-    sourceId: 'current',
-    sourceLabel: '本地示例',
-    tags: ['产品', '生活方式'],
-  },
-  {
-    id: 'fallback-social-poster',
-    title: '社媒海报背景',
-    prompt: 'A clean social media poster background with layered paper textures, subtle gradient lighting, modern retail campaign style, empty center space for copy, high resolution.',
-    imageUrl: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=80',
-    sourceId: 'current',
-    sourceLabel: '本地示例',
-    tags: ['社媒', '海报'],
-  },
+const LANGUAGE_OPTIONS: Array<{ value: LanguageFilter; label: string }> = [
+  { value: 'all', label: '全部语言' },
+  { value: 'zh', label: '中文' },
+  { value: 'en', label: 'English' },
 ]
 
-function getString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : ''
-}
+const MODE_OPTIONS: Array<{ value: ModeFilter; label: string }> = [
+  { value: 'all', label: '全部模式' },
+  { value: 'generate', label: '文生图' },
+  { value: 'edit', label: '编辑' },
+]
 
-function getStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.map(getString).filter(Boolean)
-}
-
-function getNumber(value: unknown): number | undefined {
-  const number = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
-  return Number.isFinite(number) && number > 0 ? number : undefined
-}
-
-function getPromptFromMessages(value: unknown): string {
-  if (!Array.isArray(value)) return ''
-  const messages = value as Array<Record<string, unknown>>
-  const lastUser = [...messages]
-    .reverse()
-    .find((item) => getString(item.role).toLowerCase() === 'user' && getString(item.content))
-  return getString(lastUser?.content) || getString(messages.find((item) => getString(item.content))?.content)
-}
-
-function resolveImageUrl(value: string, source: PromptSource): string {
-  if (!value) return ''
-  if (/^https?:\/\//i.test(value)) return value
-  const normalized = value.replace(/^\.?\//, '')
-  return `${source.imageBaseUrl}/${normalized}`
-}
-
-function getPromptSource(id: PromptSourceId): PromptSource {
-  return PROMPT_SOURCES.find((source) => source.id === id) ?? PROMPT_SOURCES[0]
-}
-
-function normalizePromptItem(item: unknown, index: number, source: PromptSource): SquarePrompt | null {
-  if (!item || typeof item !== 'object') return null
-  const record = item as Record<string, unknown>
-  const prompt =
-    getString(record.prompt) ||
-    getString(record.prompt_text) ||
-    getString(record.extracted_prompt) ||
-    getString(record.positivePrompt) ||
-    getString(record.description) ||
-    getPromptFromMessages(record.messages)
-  const image =
-    getString(record.image) ||
-    getString(record.imageUrl) ||
-    getString(record.media_url) ||
-    getString(record.url) ||
-    getString(record.cover) ||
-    getString(record.cdnImage) ||
-    getString(record.rawImage) ||
-    getStringArray(record.media_urls)[0] ||
-    getStringArray(record.images)[0] ||
-    getStringArray(record.cdnImages)[0] ||
-    getStringArray(record.rawImages)[0]
-
-  if (!prompt || !image) return null
-
-  const sourceUrl =
-    getString(record.sourceUrl) ||
-    getString(record.tweet_url) ||
-    getString(record.link) ||
-    undefined
-  const tags = [
-    ...getStringArray(record.tags),
-    getString(record.category),
-    getString(record.suggested_category),
-    getString(record.model),
-  ].filter(Boolean)
-
-  return {
-    id: `${source.id}-${getString(record.id) || getString(record.slug) || getString(record.tweet_url) || index}`,
-    title: getString(record.title) || getString(record.suggested_title) || getString(record.name) || `灵感 ${index + 1}`,
-    prompt,
-    imageUrl: resolveImageUrl(image, source),
-    imageWidth: getNumber(record.imageWidth) ?? getNumber(record.width),
-    imageHeight: getNumber(record.imageHeight) ?? getNumber(record.height),
-    sourceUrl,
-    sourceId: source.id,
-    sourceLabel: source.label,
-    tags: Array.from(new Set(tags)).slice(0, 4),
-  }
-}
-
-function normalizePromptData(data: unknown, source: PromptSource): SquarePrompt[] {
-  const rawItems = Array.isArray(data)
-    ? data
-    : data && typeof data === 'object'
-      ? Object.values(data as Record<string, unknown>).flatMap((value) => Array.isArray(value) ? value : [])
-      : []
-
-  const items = rawItems
-    .map((item, index) => normalizePromptItem(item, index, source))
-    .filter((item): item is SquarePrompt => Boolean(item))
-
-  const seen = new Set<string>()
-  return items.filter((item) => {
-    const key = `${item.imageUrl}\n${item.prompt}`
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-}
-
-function getImageAspectRatio(item: SquarePrompt): string {
-  return item.imageWidth && item.imageHeight ? `${item.imageWidth} / ${item.imageHeight}` : DEFAULT_IMAGE_ASPECT_RATIO
-}
+const NSFW_OPTIONS: Array<{ value: NsfwFilter; label: string }> = [
+  { value: 'show', label: '显示 NSFW' },
+  { value: 'hide', label: '隐藏 NSFW' },
+  { value: 'only', label: '仅 NSFW' },
+]
 
 function SquareImage({
   src,
@@ -244,18 +98,64 @@ function SquareImage({
   )
 }
 
+function SegmentedControl<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string
+  options: Array<{ value: T; label: string }>
+  value: T
+  onChange: (value: T) => void
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="mb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">{label}</div>
+      <div className="flex h-10 w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-white/[0.08] dark:bg-white/[0.03]">
+        {options.map((option) => {
+          const active = option.value === value
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              className={`h-8 min-w-0 flex-1 rounded-md px-2 text-xs font-medium transition ${active ? 'bg-white text-gray-900 shadow-sm dark:bg-white/[0.10] dark:text-white' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+            >
+              {option.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function getModeLabel(mode: SquareMode) {
+  return mode === 'edit' ? '编辑' : '文生图'
+}
+
 export default function PromptSquare() {
   const showToast = useStore((s) => s.showToast)
+  const setAppMode = useStore((s) => s.setAppMode)
+  const setPrompt = useStore((s) => s.setPrompt)
+  const setInputImages = useStore((s) => s.setInputImages)
   const [items, setItems] = useState<SquarePrompt[]>([])
   const [selected, setSelected] = useState<SquarePrompt | null>(null)
   const [activeSourceId, setActiveSourceId] = useState<PromptSourceId>('current')
   const [loading, setLoading] = useState(true)
+  const [applying, setApplying] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [languageFilter, setLanguageFilter] = useState<LanguageFilter>('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [modeFilter, setModeFilter] = useState<ModeFilter>('all')
+  const [nsfwFilter, setNsfwFilter] = useState<NsfwFilter>('show')
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const [showBackToTop, setShowBackToTop] = useState(false)
   const activeSource = getPromptSource(activeSourceId)
 
-  const loadPrompts = async (source: PromptSource = activeSource) => {
+  const loadPrompts = async (source = activeSource) => {
     setLoading(true)
     setError(null)
     try {
@@ -278,31 +178,36 @@ export default function PromptSquare() {
     void loadPrompts(activeSource)
   }, [activeSourceId])
 
+  const categoryOptions = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const item of items) counts.set(item.category, (counts.get(item.category) ?? 0) + 1)
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([category]) => category)
+  }, [items])
+
+  useEffect(() => {
+    if (categoryFilter !== 'all' && !categoryOptions.includes(categoryFilter)) setCategoryFilter('all')
+  }, [categoryFilter, categoryOptions])
+
   const filteredItems = useMemo(() => {
     const keyword = query.trim().toLowerCase()
-    if (!keyword) return items
-    return items.filter((item) =>
-      `${item.title} ${item.prompt} ${item.sourceLabel} ${item.tags.join(' ')}`.toLowerCase().includes(keyword)
-    )
-  }, [items, query])
+    return items.filter((item) => {
+      if (keyword && !`${item.title} ${item.prompt} ${item.sourceLabel} ${item.category} ${item.subCategory ?? ''} ${item.tags.join(' ')}`.toLowerCase().includes(keyword)) return false
+      if (languageFilter !== 'all' && item.language !== languageFilter) return false
+      if (categoryFilter !== 'all' && item.category !== categoryFilter) return false
+      if (modeFilter !== 'all' && item.mode !== modeFilter) return false
+      if (nsfwFilter === 'hide' && item.nsfw) return false
+      if (nsfwFilter === 'only' && !item.nsfw) return false
+      return true
+    })
+  }, [items, query, languageFilter, categoryFilter, modeFilter, nsfwFilter])
   const visibleItems = filteredItems.slice(0, visibleCount)
   const hasMore = visibleCount < filteredItems.length
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE)
-  }, [query, activeSourceId])
-
-  useEffect(() => {
-    if (!hasMore) return
-
-    const onScroll = () => {
-      const remaining = document.documentElement.scrollHeight - window.innerHeight - window.scrollY
-      if (remaining < 900) setVisibleCount((count) => Math.min(count + PAGE_SIZE, filteredItems.length))
-    }
-
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [filteredItems.length, hasMore])
+  }, [query, languageFilter, categoryFilter, modeFilter, nsfwFilter, activeSourceId])
 
   useEffect(() => {
     if (!selected) return
@@ -314,6 +219,13 @@ export default function PromptSquare() {
     }
   }, [selected])
 
+  useEffect(() => {
+    const onScroll = () => setShowBackToTop(window.scrollY > 600)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
   const copyPrompt = async (prompt: string) => {
     try {
       await copyTextToClipboard(prompt)
@@ -323,9 +235,37 @@ export default function PromptSquare() {
     }
   }
 
+  const applyPrompt = async (item: SquarePrompt) => {
+    if (applying) return
+
+    if (item.mode === 'generate') {
+      setAppMode('gallery')
+      setInputImages([])
+      setPrompt(item.prompt)
+      setSelected(null)
+      showToast('已套用到生图输入框', 'success')
+      return
+    }
+
+    setApplying(true)
+    try {
+      const referenceUrl = item.referenceImageUrls[0] || item.imageUrl
+      const image = await createInputImageFromUrl(referenceUrl)
+      setAppMode('gallery')
+      setInputImages([image])
+      setPrompt(item.prompt)
+      setSelected(null)
+      showToast('已套用提示词和参考图', 'success')
+    } catch (err) {
+      showToast(`套用失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setApplying(false)
+    }
+  }
+
   return (
-    <main className="safe-area-x mx-auto max-w-7xl pb-16">
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <main className="safe-area-x mx-auto max-w-7xl pt-4 pb-16">
+      <div className="mb-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">广场</h2>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">浏览可复用的生图提示词和参考图。</p>
@@ -333,41 +273,70 @@ export default function PromptSquare() {
             已展示 {Math.min(visibleCount, filteredItems.length)} / {filteredItems.length}
           </p>
         </div>
-        <div className="flex flex-col gap-2 sm:items-end">
-          <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-white/[0.08] dark:bg-white/[0.03]" role="tablist" aria-label="提示词来源">
-            {PROMPT_SOURCES.map((source) => {
-              const active = source.id === activeSourceId
-              return (
+      </div>
+
+      <div className="sticky top-[calc(env(safe-area-inset-top,0px)+4.5rem)] z-30 mb-5 rounded-lg border border-gray-200 bg-white/95 px-3 py-3 shadow-sm backdrop-blur dark:border-white/[0.08] dark:bg-gray-950/90">
+        <div className="grid gap-3">
+          <div className="grid gap-3 lg:grid-cols-[minmax(260px,360px)_minmax(280px,1fr)] lg:items-end">
+            <div className="min-w-0">
+              <div className="mb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">来源</div>
+              <div className="flex h-10 w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-white/[0.08] dark:bg-white/[0.03]" role="tablist" aria-label="提示词来源">
+              {PROMPT_SOURCES.map((source) => {
+                const active = source.id === activeSourceId
+                return (
+                  <button
+                    key={source.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setActiveSourceId(source.id)}
+                    title={source.description}
+                    className={`h-8 min-w-0 flex-1 rounded-md px-2 text-xs font-medium transition ${active ? 'bg-white text-gray-900 shadow-sm dark:bg-white/[0.10] dark:text-white' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                  >
+                    {source.label}
+                  </button>
+                )
+              })}
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="mb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">搜索</div>
+              <div className="flex gap-2">
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="搜索提示词"
+                  className="h-10 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-200 lg:max-w-80"
+                />
                 <button
-                  key={source.id}
                   type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setActiveSourceId(source.id)}
-                  title={source.description}
-                  className={`h-8 rounded-md px-3 text-xs font-medium transition ${active ? 'bg-white text-gray-900 shadow-sm dark:bg-white/[0.10] dark:text-white' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                  onClick={() => void loadPrompts(activeSource)}
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-gray-800 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-200"
+                  title="刷新"
+                  aria-label="刷新广场"
                 >
-                  {source.label}
+                  <RefreshIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                 </button>
-              )
-            })}
+              </div>
+            </div>
           </div>
-          <div className="flex gap-2">
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索提示词"
-            className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 sm:w-64"
-          />
-          <button
-            type="button"
-            onClick={() => void loadPrompts(activeSource)}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-gray-800 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-200"
-            title="刷新"
-            aria-label="刷新广场"
-          >
-            <RefreshIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_minmax(260px,1.2fr)_minmax(180px,0.8fr)]">
+          <SegmentedControl label="语言" options={LANGUAGE_OPTIONS} value={languageFilter} onChange={setLanguageFilter} />
+          <SegmentedControl label="模式" options={MODE_OPTIONS} value={modeFilter} onChange={setModeFilter} />
+          <SegmentedControl label="NSFW" options={NSFW_OPTIONS} value={nsfwFilter} onChange={setNsfwFilter} />
+          <label className="min-w-0">
+            <span className="mb-1 block text-[11px] font-medium text-gray-400 dark:text-gray-500">分类</span>
+            <select
+              value={categoryFilter}
+              onChange={(event) => setCategoryFilter(event.target.value)}
+              className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-300"
+            >
+              <option value="all">全部分类</option>
+              {categoryOptions.map((category) => (
+                <option key={category} value={category}>{category}</option>
+              ))}
+            </select>
+          </label>
           </div>
         </div>
       </div>
@@ -378,19 +347,19 @@ export default function PromptSquare() {
         </div>
       )}
 
-      <div className="columns-1 gap-4 sm:columns-2 lg:columns-3 xl:columns-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {visibleItems.map((item) => (
           <button
             key={item.id}
             type="button"
             onClick={() => setSelected(item)}
-            className="mb-4 block w-full break-inside-avoid overflow-hidden rounded-lg border border-gray-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.03]"
+            className="block w-full overflow-hidden rounded-lg border border-gray-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.03]"
           >
             <SquareImage
               src={item.imageUrl}
               alt={item.title}
               aspectRatio={getImageAspectRatio(item)}
-              className="w-full"
+              className="h-56 w-full sm:h-52 xl:h-48"
               imgClassName="object-cover"
             />
             <div className="p-3">
@@ -398,7 +367,12 @@ export default function PromptSquare() {
                 <div className="line-clamp-1 min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-100">{item.title}</div>
                 <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">{item.sourceLabel}</span>
               </div>
-              <div className="mt-1 line-clamp-3 text-xs leading-5 text-gray-500 dark:text-gray-400">{item.prompt}</div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">{getModeLabel(item.mode)}</span>
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">{item.category}</span>
+                {item.nsfw && <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[11px] text-rose-600 dark:bg-rose-500/10 dark:text-rose-300">NSFW</span>}
+              </div>
+              <div className="mt-2 line-clamp-3 text-xs leading-5 text-gray-500 dark:text-gray-400">{item.prompt}</div>
               {item.tags.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {item.tags.map((tag) => (
@@ -433,7 +407,7 @@ export default function PromptSquare() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={() => setSelected(null)}>
           <div className="absolute inset-0 bg-black/35 backdrop-blur-sm" />
           <div
-            className="relative z-10 grid h-[88vh] w-full max-w-5xl grid-rows-[minmax(0,44vh)_minmax(0,1fr)] overflow-hidden rounded-2xl border border-white/50 bg-white shadow-2xl dark:border-white/[0.08] dark:bg-gray-900 md:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)] md:grid-rows-none"
+            className="relative z-10 grid h-[88vh] w-full max-w-5xl grid-rows-[minmax(0,44vh)_minmax(0,1fr)] overflow-hidden rounded-lg border border-white/50 bg-white shadow-2xl dark:border-white/[0.08] dark:bg-gray-900 md:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)] md:grid-rows-none"
             onClick={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
             onTouchMove={(event) => event.stopPropagation()}
@@ -445,7 +419,7 @@ export default function PromptSquare() {
               <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-4 dark:border-white/[0.08]">
                 <div className="min-w-0">
                   <h3 className="truncate text-base font-bold text-gray-900 dark:text-gray-100">{selected.title}</h3>
-                  <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{selected.sourceLabel} · 提示词详情</div>
+                  <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{selected.sourceLabel} · {getModeLabel(selected.mode)} · {selected.category}</div>
                 </div>
                 <button
                   type="button"
@@ -460,13 +434,14 @@ export default function PromptSquare() {
                 <div className="whitespace-pre-wrap rounded-lg bg-gray-50 p-4 text-sm leading-7 text-gray-700 dark:bg-white/[0.04] dark:text-gray-200">
                   {selected.prompt}
                 </div>
-                {selected.tags.length > 0 && (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {selected.tags.map((tag) => (
-                      <span key={tag} className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">{tag}</span>
-                    ))}
-                  </div>
-                )}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">{getModeLabel(selected.mode)}</span>
+                  <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">{selected.language === 'zh' ? '中文' : selected.language === 'en' ? 'English' : '未知语言'}</span>
+                  {selected.nsfw && <span className="rounded bg-rose-50 px-2 py-1 text-xs text-rose-600 dark:bg-rose-500/10 dark:text-rose-300">NSFW</span>}
+                  {selected.tags.map((tag) => (
+                    <span key={tag} className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">{tag}</span>
+                  ))}
+                </div>
               </div>
               <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 p-4 dark:border-white/[0.08]">
                 <a
@@ -492,16 +467,35 @@ export default function PromptSquare() {
                 <button
                   type="button"
                   onClick={() => void copyPrompt(selected.prompt)}
-                  className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                  className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 dark:border-white/[0.08] dark:text-gray-300 dark:hover:bg-white/[0.06] dark:hover:text-white"
                 >
                   <CopyIcon className="h-4 w-4" />
                   复制提示词
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void applyPrompt(selected)}
+                  disabled={applying}
+                  className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                >
+                  <EditIcon className="h-4 w-4" />
+                  {applying ? '套用中' : '套用'}
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      <button
+        type="button"
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        className={`fixed bottom-5 right-5 z-40 inline-flex h-11 w-11 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 shadow-lg transition hover:bg-gray-50 hover:text-gray-900 dark:border-white/[0.08] dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 ${showBackToTop ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0'}`}
+        title="回到顶部"
+        aria-label="回到顶部"
+      >
+        <ArrowDownIcon className="h-5 w-5 rotate-180" />
+      </button>
     </main>
   )
 }

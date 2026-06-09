@@ -4961,15 +4961,21 @@ export async function createInputImageFromFile(file: File): Promise<InputImage |
   return { id, dataUrl }
 }
 
-/** 添加图片到输入（右键菜单）—— 支持 data/blob/http URL */
-export async function addImageFromUrl(src: string): Promise<void> {
+export async function createInputImageFromUrl(src: string): Promise<InputImage> {
   const res = await fetch(src)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const blob = await res.blob()
   if (!blob.type.startsWith('image/')) throw new Error('不是有效的图片')
   const dataUrl = await blobToDataUrl(blob)
   const id = await storeImage(dataUrl, 'upload')
   cacheImage(id, dataUrl)
-  useStore.getState().addInputImage({ id, dataUrl })
+  return { id, dataUrl }
+}
+
+/** 添加图片到输入（右键菜单）—— 支持 data/blob/http URL */
+export async function addImageFromUrl(src: string): Promise<void> {
+  const image = await createInputImageFromUrl(src)
+  useStore.getState().addInputImage(image)
 }
 
 function fileToDataUrl(file: File): Promise<string> {

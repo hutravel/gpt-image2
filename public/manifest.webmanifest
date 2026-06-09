@@ -1,7 +1,7 @@
 {
-  "name": "运营生图平台",
-  "short_name": "运营生图",
-  "description": "运营生图平台图像生成工作台",
+  "name": "Image Paint",
+  "short_name": "Image Paint",
+  "description": "Image Paint image generation workspace",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

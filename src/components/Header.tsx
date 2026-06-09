@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
-import { useVersionCheck } from '../hooks/useVersionCheck'
 import { useTooltip } from '../hooks/useTooltip'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import ViewportTooltip from './ViewportTooltip'
 import HelpModal from './HelpModal'
 import HistoryModal from './HistoryModal'
 import { useFavoriteCollectionTitle } from './FavoriteCollections'
-import { EditIcon, HelpCircleIcon, HistoryIcon, InstallIcon, SettingsIcon } from './icons'
+import { EditIcon, HelpCircleIcon, HistoryIcon, InstallIcon, PaintBrushIcon, SettingsIcon } from './icons'
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -35,7 +34,6 @@ export default function Header() {
   const activeConversation = agentConversations.find((item) => item.id === activeAgentConversationId)
   const favoriteCollectionTitle = useFavoriteCollectionTitle()
   const showFavoriteCollectionTitle = appMode === 'gallery' && Boolean(activeFavoriteCollectionId)
-  const { hasUpdate, latestRelease, dismiss } = useVersionCheck()
   const [showHelp, setShowHelp] = useState(false)
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [isPwaInstalled, setIsPwaInstalled] = useState(isInstalledPwa)
@@ -45,6 +43,7 @@ export default function Header() {
   const [showHistoryModal, setShowHistoryModal] = useState(false)
   const historyButtonRef = useRef<HTMLButtonElement>(null)
   const createConversation = useStore((s) => s.createAgentConversation)
+  const brandTitle = 'Image Paint'
 
   useEffect(() => {
     if (appMode === 'agent') {
@@ -157,26 +156,16 @@ export default function Header() {
               {showFavoriteCollectionTitle ? (
                 <>
                   <span className="min-w-0 truncate text-[17px] font-bold tracking-tight text-gray-800 dark:text-gray-100 sm:hidden" title={favoriteCollectionTitle}>{favoriteCollectionTitle}</span>
-                  <span className="hidden text-lg font-bold tracking-tight text-gray-800 dark:text-gray-100 sm:inline">
-                    运营生图平台
+                  <span className="hidden items-center gap-2 text-lg font-bold tracking-tight text-gray-800 dark:text-gray-100 sm:inline-flex">
+                    <PaintBrushIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    {brandTitle}
                   </span>
                 </>
               ) : (
-                <span className="text-[17px] sm:text-lg font-bold tracking-tight text-gray-800 dark:text-gray-100">
-                  运营生图平台
+                <span className="inline-flex items-center gap-2 text-[17px] font-bold tracking-tight text-gray-800 dark:text-gray-100 sm:text-lg">
+                  <PaintBrushIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  {brandTitle}
                 </span>
-              )}
-              {hasUpdate && latestRelease && (
-                <a
-                  href={latestRelease.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={dismiss}
-                  className="absolute -right-1 -top-1 translate-x-full -translate-y-1/4 px-1 py-0.5 rounded-[4px] border border-red-500/30 text-[9px] font-black bg-red-500 text-white hover:bg-red-600 transition-all animate-fade-in leading-none shadow-sm"
-                  title={`新版本 ${latestRelease.tag}`}
-                >
-                  NEW
-                </a>
               )}
             </h1>
             {appMode === 'agent' && <div className="hidden sm:flex items-center gap-1 relative">
