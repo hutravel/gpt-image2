@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboard'
 import {
   FALLBACK_PROMPTS,
@@ -7,6 +7,7 @@ import {
   getImageAspectRatio,
   getPromptSource,
   normalizePromptData,
+  type PromptSource,
   type PromptSourceId,
   type SquareLanguage,
   type SquareMode,
@@ -153,30 +154,62 @@ export default function PromptSquare() {
   const [nsfwFilter, setNsfwFilter] = useState<NsfwFilter>('show')
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   const [showBackToTop, setShowBackToTop] = useState(false)
+  const loadAbortRef = useRef<AbortController | null>(null)
+  const loadRequestIdRef = useRef(0)
   const activeSource = getPromptSource(activeSourceId)
 
-  const loadPrompts = async (source = activeSource) => {
+  const resetSourceState = () => {
+    setSelected(null)
+    setQuery('')
+    setLanguageFilter('all')
+    setCategoryFilter('all')
+    setModeFilter('all')
+    setNsfwFilter('show')
+    setVisibleCount(PAGE_SIZE)
+  }
+
+  const loadPrompts = async (source: PromptSource = activeSource, options?: { clear?: boolean }) => {
+    const requestId = loadRequestIdRef.current + 1
+    loadRequestIdRef.current = requestId
+    loadAbortRef.current?.abort()
+    const controller = new AbortController()
+    loadAbortRef.current = controller
+
     setLoading(true)
     setError(null)
+    if (options?.clear) {
+      setItems([])
+      resetSourceState()
+    }
+
     try {
-      const response = await fetch(source.dataUrl)
+      const response = await fetch(source.dataUrl, { signal: controller.signal })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const normalized = normalizePromptData(await response.json(), source)
       if (normalized.length === 0) throw new Error('没有解析到可展示的提示词')
+      if (requestId !== loadRequestIdRef.current) return
       setItems(normalized)
       setVisibleCount(PAGE_SIZE)
     } catch (err) {
+      if ((err as { name?: string })?.name === 'AbortError' || requestId !== loadRequestIdRef.current) return
       setError(err instanceof Error ? err.message : String(err))
       setItems(FALLBACK_PROMPTS)
       setVisibleCount(PAGE_SIZE)
     } finally {
-      setLoading(false)
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false)
+        if (loadAbortRef.current === controller) loadAbortRef.current = null
+      }
     }
   }
 
   useEffect(() => {
-    void loadPrompts(activeSource)
+    void loadPrompts(activeSource, { clear: true })
   }, [activeSourceId])
+
+  useEffect(() => {
+    return () => loadAbortRef.current?.abort()
+  }, [])
 
   const categoryOptions = useMemo(() => {
     const counts = new Map<string, number>()
@@ -347,43 +380,75 @@ export default function PromptSquare() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {visibleItems.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setSelected(item)}
-            className="block w-full overflow-hidden rounded-lg border border-gray-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.03]"
-          >
-            <SquareImage
-              src={item.imageUrl}
-              alt={item.title}
-              aspectRatio={getImageAspectRatio(item)}
-              className="h-56 w-full sm:h-52 xl:h-48"
-              imgClassName="object-cover"
-            />
-            <div className="p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="line-clamp-1 min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-100">{item.title}</div>
-                <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">{item.sourceLabel}</span>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">{getModeLabel(item.mode)}</span>
-                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">{item.category}</span>
-                {item.nsfw && <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[11px] text-rose-600 dark:bg-rose-500/10 dark:text-rose-300">NSFW</span>}
-              </div>
-              <div className="mt-2 line-clamp-3 text-xs leading-5 text-gray-500 dark:text-gray-400">{item.prompt}</div>
-              {item.tags.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {item.tags.map((tag) => (
-                    <span key={tag} className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">{tag}</span>
-                  ))}
+      {loading && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200">
+          <RefreshIcon className="h-4 w-4 animate-spin" />
+          正在加载 {activeSource.label} 来源...
+        </div>
+      )}
+
+      {loading && items.length === 0 ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-busy="true" aria-label="提示词加载中">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div
+              key={index}
+              className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-white/[0.03]"
+            >
+              <div className="h-56 w-full animate-pulse bg-gray-200/70 dark:bg-white/[0.06] sm:h-52 xl:h-48" />
+              <div className="space-y-3 p-3">
+                <div className="h-4 w-3/4 animate-pulse rounded bg-gray-200/70 dark:bg-white/[0.06]" />
+                <div className="flex gap-2">
+                  <div className="h-5 w-14 animate-pulse rounded bg-gray-200/70 dark:bg-white/[0.06]" />
+                  <div className="h-5 w-20 animate-pulse rounded bg-gray-200/70 dark:bg-white/[0.06]" />
                 </div>
-              )}
+                <div className="space-y-2">
+                  <div className="h-3 w-full animate-pulse rounded bg-gray-200/70 dark:bg-white/[0.06]" />
+                  <div className="h-3 w-5/6 animate-pulse rounded bg-gray-200/70 dark:bg-white/[0.06]" />
+                  <div className="h-3 w-2/3 animate-pulse rounded bg-gray-200/70 dark:bg-white/[0.06]" />
+                </div>
+              </div>
             </div>
-          </button>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 ${loading ? 'pointer-events-none opacity-60' : ''}`}>
+          {visibleItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setSelected(item)}
+              className="block w-full overflow-hidden rounded-lg border border-gray-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.03]"
+            >
+              <SquareImage
+                src={item.imageUrl}
+                alt={item.title}
+                aspectRatio={getImageAspectRatio(item)}
+                className="h-56 w-full sm:h-52 xl:h-48"
+                imgClassName="object-cover"
+              />
+              <div className="p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="line-clamp-1 min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-100">{item.title}</div>
+                  <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">{item.sourceLabel}</span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">{getModeLabel(item.mode)}</span>
+                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">{item.category}</span>
+                  {item.nsfw && <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[11px] text-rose-600 dark:bg-rose-500/10 dark:text-rose-300">NSFW</span>}
+                </div>
+                <div className="mt-2 line-clamp-3 text-xs leading-5 text-gray-500 dark:text-gray-400">{item.prompt}</div>
+                {item.tags.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {item.tags.map((tag) => (
+                      <span key={tag} className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">{tag}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
 
       {!loading && filteredItems.length === 0 && (
         <div className="rounded-lg border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-400">
