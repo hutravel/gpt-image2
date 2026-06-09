@@ -3,16 +3,44 @@ import { copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboar
 import { useStore } from '../store'
 import { CloseIcon, CopyIcon, ExternalLinkIcon, RefreshIcon } from './icons'
 
-const PROMPT_SOURCE_URL = './data/prompts-images.json'
-const IMAGE_REPO_BASE_URL = 'https://raw.githubusercontent.com/mrslimslim/awesome-prompt/main'
+const CURRENT_IMAGE_REPO_BASE_URL = 'https://raw.githubusercontent.com/mrslimslim/awesome-prompt/main'
+const EVOLINK_IMAGE_REPO_BASE_URL = 'https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/main'
+const EVOLINK_REPO_URL = 'https://github.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts'
 const PAGE_SIZE = 40
+const DEFAULT_IMAGE_ASPECT_RATIO = '4 / 3'
+
+const PROMPT_SOURCES = [
+  {
+    id: 'current',
+    label: 'MeiGen',
+    description: '本地提示词集合',
+    dataUrl: './data/prompts-images.json',
+    repoUrl: 'https://github.com/mrslimslim/awesome-prompt',
+    imageBaseUrl: CURRENT_IMAGE_REPO_BASE_URL,
+  },
+  {
+    id: 'evolink',
+    label: 'EvoLinkAI',
+    description: 'awesome-gpt-image-2-API-and-Prompts',
+    dataUrl: 'https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/main/data/ingested_tweets.json',
+    repoUrl: EVOLINK_REPO_URL,
+    imageBaseUrl: EVOLINK_IMAGE_REPO_BASE_URL,
+  },
+] as const
+
+type PromptSource = typeof PROMPT_SOURCES[number]
+type PromptSourceId = PromptSource['id']
 
 interface SquarePrompt {
   id: string
   title: string
   prompt: string
   imageUrl: string
+  imageWidth?: number
+  imageHeight?: number
   sourceUrl?: string
+  sourceId: PromptSourceId
+  sourceLabel: string
   tags: string[]
 }
 
@@ -22,6 +50,8 @@ const FALLBACK_PROMPTS: SquarePrompt[] = [
     title: '夏季活动主视觉',
     prompt: 'A refreshing summer campaign key visual for an ecommerce homepage, bright natural light, clean product stage, citrus colors, premium commercial photography, high detail, no text.',
     imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=80',
+    sourceId: 'current',
+    sourceLabel: '本地示例',
     tags: ['活动', '主视觉', '电商'],
   },
   {
@@ -29,6 +59,8 @@ const FALLBACK_PROMPTS: SquarePrompt[] = [
     title: '生活方式产品图',
     prompt: 'A minimalist lifestyle product photo on a warm kitchen counter, soft morning sunlight, elegant shadows, editorial composition, premium brand tone, realistic photography.',
     imageUrl: 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&w=900&q=80',
+    sourceId: 'current',
+    sourceLabel: '本地示例',
     tags: ['产品', '生活方式'],
   },
   {
@@ -36,6 +68,8 @@ const FALLBACK_PROMPTS: SquarePrompt[] = [
     title: '社媒海报背景',
     prompt: 'A clean social media poster background with layered paper textures, subtle gradient lighting, modern retail campaign style, empty center space for copy, high resolution.',
     imageUrl: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=80',
+    sourceId: 'current',
+    sourceLabel: '本地示例',
     tags: ['社媒', '海报'],
   },
 ]
@@ -49,6 +83,11 @@ function getStringArray(value: unknown): string[] {
   return value.map(getString).filter(Boolean)
 }
 
+function getNumber(value: unknown): number | undefined {
+  const number = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  return Number.isFinite(number) && number > 0 ? number : undefined
+}
+
 function getPromptFromMessages(value: unknown): string {
   if (!Array.isArray(value)) return ''
   const messages = value as Array<Record<string, unknown>>
@@ -58,42 +97,69 @@ function getPromptFromMessages(value: unknown): string {
   return getString(lastUser?.content) || getString(messages.find((item) => getString(item.content))?.content)
 }
 
-function resolveImageUrl(value: string): string {
+function resolveImageUrl(value: string, source: PromptSource): string {
   if (!value) return ''
   if (/^https?:\/\//i.test(value)) return value
   const normalized = value.replace(/^\.?\//, '')
-  return `${IMAGE_REPO_BASE_URL}/${normalized}`
+  return `${source.imageBaseUrl}/${normalized}`
 }
 
-function normalizePromptItem(item: unknown, index: number): SquarePrompt | null {
+function getPromptSource(id: PromptSourceId): PromptSource {
+  return PROMPT_SOURCES.find((source) => source.id === id) ?? PROMPT_SOURCES[0]
+}
+
+function normalizePromptItem(item: unknown, index: number, source: PromptSource): SquarePrompt | null {
   if (!item || typeof item !== 'object') return null
   const record = item as Record<string, unknown>
   const prompt =
     getString(record.prompt) ||
+    getString(record.prompt_text) ||
+    getString(record.extracted_prompt) ||
     getString(record.positivePrompt) ||
     getString(record.description) ||
     getPromptFromMessages(record.messages)
   const image =
     getString(record.image) ||
     getString(record.imageUrl) ||
+    getString(record.media_url) ||
     getString(record.url) ||
     getString(record.cover) ||
+    getString(record.cdnImage) ||
+    getString(record.rawImage) ||
+    getStringArray(record.media_urls)[0] ||
     getStringArray(record.images)[0] ||
-    getStringArray(record.cdnImages)[0]
+    getStringArray(record.cdnImages)[0] ||
+    getStringArray(record.rawImages)[0]
 
   if (!prompt || !image) return null
 
+  const sourceUrl =
+    getString(record.sourceUrl) ||
+    getString(record.tweet_url) ||
+    getString(record.link) ||
+    undefined
+  const tags = [
+    ...getStringArray(record.tags),
+    getString(record.category),
+    getString(record.suggested_category),
+    getString(record.model),
+  ].filter(Boolean)
+
   return {
-    id: getString(record.id) || getString(record.slug) || `prompt-${index}`,
-    title: getString(record.title) || getString(record.name) || `灵感 ${index + 1}`,
+    id: `${source.id}-${getString(record.id) || getString(record.slug) || getString(record.tweet_url) || index}`,
+    title: getString(record.title) || getString(record.suggested_title) || getString(record.name) || `灵感 ${index + 1}`,
     prompt,
-    imageUrl: resolveImageUrl(image),
-    sourceUrl: getString(record.sourceUrl) || getString(record.link) || undefined,
-    tags: getStringArray(record.tags).slice(0, 4),
+    imageUrl: resolveImageUrl(image, source),
+    imageWidth: getNumber(record.imageWidth) ?? getNumber(record.width),
+    imageHeight: getNumber(record.imageHeight) ?? getNumber(record.height),
+    sourceUrl,
+    sourceId: source.id,
+    sourceLabel: source.label,
+    tags: Array.from(new Set(tags)).slice(0, 4),
   }
 }
 
-function normalizePromptData(data: unknown): SquarePrompt[] {
+function normalizePromptData(data: unknown, source: PromptSource): SquarePrompt[] {
   const rawItems = Array.isArray(data)
     ? data
     : data && typeof data === 'object'
@@ -101,7 +167,7 @@ function normalizePromptData(data: unknown): SquarePrompt[] {
       : []
 
   const items = rawItems
-    .map(normalizePromptItem)
+    .map((item, index) => normalizePromptItem(item, index, source))
     .filter((item): item is SquarePrompt => Boolean(item))
 
   const seen = new Set<string>()
@@ -113,7 +179,23 @@ function normalizePromptData(data: unknown): SquarePrompt[] {
   })
 }
 
-function SquareImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
+function getImageAspectRatio(item: SquarePrompt): string {
+  return item.imageWidth && item.imageHeight ? `${item.imageWidth} / ${item.imageHeight}` : DEFAULT_IMAGE_ASPECT_RATIO
+}
+
+function SquareImage({
+  src,
+  alt,
+  aspectRatio,
+  className,
+  imgClassName,
+}: {
+  src: string
+  alt: string
+  aspectRatio?: string
+  className?: string
+  imgClassName?: string
+}) {
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading')
   const [retryKey, setRetryKey] = useState(0)
   const imageSrc = retryKey === 0 ? src : `${src}${src.includes('?') ? '&' : '?'}retry=${retryKey}`
@@ -124,9 +206,12 @@ function SquareImage({ src, alt, className }: { src: string; alt: string; classN
   }, [src])
 
   return (
-    <div className="relative overflow-hidden bg-gray-100 dark:bg-white/[0.04]">
+    <div
+      className={`relative overflow-hidden bg-gray-100 dark:bg-white/[0.04] ${className ?? ''}`}
+      style={aspectRatio ? { aspectRatio } : undefined}
+    >
       {status !== 'loaded' && (
-        <div className="absolute inset-0 flex min-h-[180px] items-center justify-center p-4 text-center text-xs text-gray-400 dark:text-gray-500">
+        <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-gray-400 dark:text-gray-500">
           {status === 'error' ? (
             <button
               type="button"
@@ -140,7 +225,7 @@ function SquareImage({ src, alt, className }: { src: string; alt: string; classN
               图片加载失败，点击重试
             </button>
           ) : (
-            <span>图片加载中</span>
+            <div className="h-full w-full animate-pulse bg-gray-200/70 dark:bg-white/[0.06]" />
           )}
         </div>
       )}
@@ -148,7 +233,7 @@ function SquareImage({ src, alt, className }: { src: string; alt: string; classN
         key={imageSrc}
         src={imageSrc}
         alt={alt}
-        className={`${className ?? ''} ${status === 'loaded' ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}
+        className={`absolute inset-0 h-full w-full ${imgClassName ?? 'object-cover'} ${status === 'loaded' ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}
         loading="lazy"
         decoding="async"
         referrerPolicy="no-referrer"
@@ -163,18 +248,20 @@ export default function PromptSquare() {
   const showToast = useStore((s) => s.showToast)
   const [items, setItems] = useState<SquarePrompt[]>([])
   const [selected, setSelected] = useState<SquarePrompt | null>(null)
+  const [activeSourceId, setActiveSourceId] = useState<PromptSourceId>('current')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const activeSource = getPromptSource(activeSourceId)
 
-  const loadPrompts = async () => {
+  const loadPrompts = async (source: PromptSource = activeSource) => {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch(PROMPT_SOURCE_URL)
+      const response = await fetch(source.dataUrl)
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      const normalized = normalizePromptData(await response.json())
+      const normalized = normalizePromptData(await response.json(), source)
       if (normalized.length === 0) throw new Error('没有解析到可展示的提示词')
       setItems(normalized)
       setVisibleCount(PAGE_SIZE)
@@ -188,14 +275,14 @@ export default function PromptSquare() {
   }
 
   useEffect(() => {
-    void loadPrompts()
-  }, [])
+    void loadPrompts(activeSource)
+  }, [activeSourceId])
 
   const filteredItems = useMemo(() => {
     const keyword = query.trim().toLowerCase()
     if (!keyword) return items
     return items.filter((item) =>
-      `${item.title} ${item.prompt} ${item.tags.join(' ')}`.toLowerCase().includes(keyword)
+      `${item.title} ${item.prompt} ${item.sourceLabel} ${item.tags.join(' ')}`.toLowerCase().includes(keyword)
     )
   }, [items, query])
   const visibleItems = filteredItems.slice(0, visibleCount)
@@ -203,7 +290,7 @@ export default function PromptSquare() {
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE)
-  }, [query])
+  }, [query, activeSourceId])
 
   useEffect(() => {
     if (!hasMore) return
@@ -246,7 +333,26 @@ export default function PromptSquare() {
             已展示 {Math.min(visibleCount, filteredItems.length)} / {filteredItems.length}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:items-end">
+          <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-white/[0.08] dark:bg-white/[0.03]" role="tablist" aria-label="提示词来源">
+            {PROMPT_SOURCES.map((source) => {
+              const active = source.id === activeSourceId
+              return (
+                <button
+                  key={source.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setActiveSourceId(source.id)}
+                  title={source.description}
+                  className={`h-8 rounded-md px-3 text-xs font-medium transition ${active ? 'bg-white text-gray-900 shadow-sm dark:bg-white/[0.10] dark:text-white' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                >
+                  {source.label}
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex gap-2">
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -255,13 +361,14 @@ export default function PromptSquare() {
           />
           <button
             type="button"
-            onClick={() => void loadPrompts()}
+            onClick={() => void loadPrompts(activeSource)}
             className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-gray-800 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-200"
             title="刷新"
             aria-label="刷新广场"
           >
             <RefreshIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
+          </div>
         </div>
       </div>
 
@@ -282,10 +389,15 @@ export default function PromptSquare() {
             <SquareImage
               src={item.imageUrl}
               alt={item.title}
-              className="w-full bg-gray-100 object-cover dark:bg-white/[0.04]"
+              aspectRatio={getImageAspectRatio(item)}
+              className="w-full"
+              imgClassName="object-cover"
             />
             <div className="p-3">
-              <div className="line-clamp-1 text-sm font-semibold text-gray-800 dark:text-gray-100">{item.title}</div>
+              <div className="flex items-start justify-between gap-2">
+                <div className="line-clamp-1 min-w-0 text-sm font-semibold text-gray-800 dark:text-gray-100">{item.title}</div>
+                <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">{item.sourceLabel}</span>
+              </div>
               <div className="mt-1 line-clamp-3 text-xs leading-5 text-gray-500 dark:text-gray-400">{item.prompt}</div>
               {item.tags.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
@@ -327,13 +439,13 @@ export default function PromptSquare() {
             onTouchMove={(event) => event.stopPropagation()}
           >
             <div className="min-h-0 overflow-hidden bg-gray-100 dark:bg-white/[0.04]">
-              <SquareImage src={selected.imageUrl} alt={selected.title} className="h-full w-full object-contain" />
+              <SquareImage src={selected.imageUrl} alt={selected.title} className="h-full w-full" imgClassName="object-contain" />
             </div>
             <div className="flex min-h-0 flex-col overflow-hidden">
               <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-4 dark:border-white/[0.08]">
                 <div className="min-w-0">
                   <h3 className="truncate text-base font-bold text-gray-900 dark:text-gray-100">{selected.title}</h3>
-                  <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">提示词详情</div>
+                  <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{selected.sourceLabel} · 提示词详情</div>
                 </div>
                 <button
                   type="button"
@@ -357,6 +469,15 @@ export default function PromptSquare() {
                 )}
               </div>
               <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 p-4 dark:border-white/[0.08]">
+                <a
+                  href={activeSource.repoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900 dark:border-white/[0.08] dark:text-gray-300 dark:hover:bg-white/[0.06] dark:hover:text-white"
+                >
+                  <ExternalLinkIcon className="h-4 w-4" />
+                  来源仓库
+                </a>
                 {selected.sourceUrl && (
                   <a
                     href={selected.sourceUrl}
