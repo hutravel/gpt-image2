@@ -404,12 +404,12 @@ export default function PromptSquare() {
         </div>
       </div>
 
-      <div className="sticky top-[calc(env(safe-area-inset-top,0px)+4.5rem)] z-30 mb-5 rounded-lg border border-gray-200 bg-white/95 px-3 py-3 shadow-sm backdrop-blur dark:border-white/[0.08] dark:bg-gray-950/90">
-        <div className="grid gap-3">
-          <div className="grid gap-3 lg:grid-cols-[minmax(260px,360px)_minmax(280px,1fr)] lg:items-end">
+      <div className="sticky top-[calc(env(safe-area-inset-top,0px)+4.5rem)] z-30 mb-5 rounded-lg border border-gray-200 bg-white/95 px-3 py-2.5 shadow-sm backdrop-blur dark:border-white/[0.08] dark:bg-gray-950/90 md:py-3">
+        <div className="grid gap-2.5 md:gap-3">
+          <div className="grid gap-2.5 md:gap-3 lg:grid-cols-[minmax(260px,360px)_minmax(280px,1fr)] lg:items-end">
             <div className="min-w-0">
               <div className="mb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">来源</div>
-              <div className="flex h-10 w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-white/[0.08] dark:bg-white/[0.03]" role="tablist" aria-label="提示词来源">
+              <div className="flex h-9 w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-white/[0.08] dark:bg-white/[0.03] md:h-10 md:p-1" role="tablist" aria-label="提示词来源">
               {PROMPT_SOURCES.map((source) => {
                 const active = source.id === activeSourceId
                 return (
@@ -435,12 +435,12 @@ export default function PromptSquare() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="搜索提示词"
-                  className="h-10 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-200 lg:max-w-80"
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-200 md:h-10 lg:max-w-80"
                 />
                 <button
                   type="button"
                   onClick={() => void loadPrompts(activeSource, { force: true })}
-                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-gray-800 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-200"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-gray-800 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-200 md:h-10 md:w-10"
                   title="刷新"
                   aria-label="刷新广场"
                 >
@@ -449,7 +449,31 @@ export default function PromptSquare() {
               </div>
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_minmax(260px,1.2fr)_minmax(180px,0.8fr)]">
+          <details className="md:hidden">
+            <summary className="flex h-9 cursor-pointer items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-100 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]">
+              <span>筛选条件</span>
+              <svg className="h-4 w-4 transition-transform [[open]>&]:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </summary>
+            <div className="mt-2.5 grid gap-2.5">
+              <SegmentedControl label="语言" options={LANGUAGE_OPTIONS} value={languageFilter} onChange={setLanguageFilter} />
+              <SegmentedControl label="模式" options={MODE_OPTIONS} value={modeFilter} onChange={setModeFilter} />
+              <SegmentedControl label="NSFW" options={NSFW_OPTIONS} value={nsfwFilter} onChange={setNsfwFilter} />
+              <label className="min-w-0">
+                <span className="mb-1 block text-[11px] font-medium text-gray-400 dark:text-gray-500">分类</span>
+                <select
+                  value={categoryFilter}
+                  onChange={(event) => setCategoryFilter(event.target.value)}
+                  className="h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-300"
+                >
+                  <option value="all">全部分类</option>
+                  {categoryOptions.map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </details>
+          <div className="hidden gap-3 sm:grid sm:grid-cols-2 md:block xl:grid xl:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_minmax(260px,1.2fr)_minmax(180px,0.8fr)]">
           <SegmentedControl label="语言" options={LANGUAGE_OPTIONS} value={languageFilter} onChange={setLanguageFilter} />
           <SegmentedControl label="模式" options={MODE_OPTIONS} value={modeFilter} onChange={setModeFilter} />
           <SegmentedControl label="NSFW" options={NSFW_OPTIONS} value={nsfwFilter} onChange={setNsfwFilter} />

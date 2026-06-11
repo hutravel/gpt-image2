@@ -3,3 +3,5 @@ dist/
 dev-proxy.config.json
 .wrangler/
 .npm-cache/
+*.vite-*.log
+public/data/split-prompts.js

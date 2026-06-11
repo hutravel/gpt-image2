@@ -6,7 +6,7 @@ const EVOLINK_IMAGE_REPO_BASE_URL = 'https://raw.githubusercontent.com/EvoLinkAI
 
 export const PROMPT_SOURCES = [
   {
-    id: 'current',
+    id: 'current' as const,
     label: 'MeiGen',
     description: '本地提示词集合',
     dataUrl: './data/prompts-images.json',
@@ -24,7 +24,7 @@ export const PROMPT_SOURCES = [
     imageBaseUrl: CURRENT_IMAGE_REPO_BASE_URL,
   },
   {
-    id: 'evolink',
+    id: 'evolink' as const,
     label: 'EvoLinkAI',
     description: 'awesome-gpt-image-2-API-and-Prompts',
     dataUrl: './data/prompts-evolink.json',
@@ -32,14 +32,14 @@ export const PROMPT_SOURCES = [
     imageBaseUrl: EVOLINK_IMAGE_REPO_BASE_URL,
   },
   {
-    id: 'banana',
+    id: 'banana' as const,
     label: 'Banana',
     description: 'banana-prompt-quicker',
     dataUrl: './data/prompts-banana.json',
     repoUrl: 'https://github.com/glidea/banana-prompt-quicker',
     imageBaseUrl: 'https://raw.githubusercontent.com/glidea/banana-prompt-quicker/main',
   },
-] as const
+]
 
 export type PromptSource = typeof PROMPT_SOURCES[number]
 export type PromptSourceId = PromptSource['id']
@@ -287,14 +287,31 @@ export function normalizePromptItem(item: unknown, index: number, source: Prompt
   return normalized
 }
 
+function seededShuffle<T>(array: T[], seed: number): T[] {
+  const result = [...array]
+  let random = seed
+  for (let i = result.length - 1; i > 0; i--) {
+    random = (random * 9301 + 49297) % 233280
+    const j = Math.floor((random / 233280) * (i + 1))
+    ;[result[i], result[j]] = [result[j], result[i]]
+  }
+  return result
+}
+
+function getDailySeed(): number {
+  const today = new Date()
+  return today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate()
+}
+
 export function dedupePromptItems(items: SquarePrompt[]): SquarePrompt[] {
   const seen = new Set<string>()
-  return items.filter((item) => {
+  const deduped = items.filter((item) => {
     const key = `${item.imageUrl}\n${item.prompt}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
   })
+  return seededShuffle(deduped, getDailySeed())
 }
 
 export function normalizePromptData(data: unknown, source: PromptSource, options?: { startIndex?: number }): SquarePrompt[] {
