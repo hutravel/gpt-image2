@@ -1,5 +1,5 @@
 import { DEFAULT_PARAMS, type AppSettings, type TaskParams } from '../types'
-import { getActiveApiProfile } from './apiProfiles'
+import { getActiveApiProfile, isKrillAiApiProfile } from './apiProfiles'
 import { normalizeImageSize } from './size'
 
 export const DEFAULT_FAL_IMAGE_SIZE = '1360x1024'
@@ -25,6 +25,10 @@ export function normalizeParamsForSettings(
 
   if (activeProfile.provider === 'openai' && activeProfile.codexCli) {
     nextParams.quality = DEFAULT_PARAMS.quality
+  }
+
+  if (isKrillAiApiProfile(activeProfile)) {
+    nextParams.quality = 'low'
   }
 
   if (activeProfile.provider === 'fal') {

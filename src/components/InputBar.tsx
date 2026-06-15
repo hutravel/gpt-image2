@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect, typ
 import { createPortal } from 'react-dom'
 import { ALL_FAVORITES_COLLECTION_ID, deleteFavoriteCollection, getTaskFavoriteCollectionIds, useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, createInputImageFromFile, deleteImageIfUnreferenced, removeMultipleTasks, getCachedImage, ensureImageCached, getActiveAgentRounds } from '../store'
 import { DEFAULT_PARAMS, type TaskRecord } from '../types'
-import { getActiveApiProfile, normalizeSettings } from '../lib/apiProfiles'
+import { getActiveApiProfile, isKrillAiApiProfile, normalizeSettings } from '../lib/apiProfiles'
 import { DEFAULT_FAL_IMAGE_SIZE, getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
 import { normalizeImageSize } from '../lib/size'
@@ -785,6 +785,7 @@ export default function InputBar() {
   }, [setPrompt])
   const activeProvider = activeProfile.provider
   const isFalProvider = activeProvider === 'fal'
+  const isKrillAiProvider = isKrillAiApiProfile(activeProfile)
   const agentAutoImageCount = appMode === 'agent' && activeProfile.provider === 'openai' && activeProfile.apiMode === 'responses'
   const moderationDisabled = isFalProvider
   const transparentOutputAvailable = appMode === 'gallery'
@@ -805,7 +806,12 @@ export default function InputBar() {
     ? DEFAULT_FAL_IMAGE_SIZE
     : normalizeImageSize(params.size) || DEFAULT_PARAMS.size
 
-  const qualityOptions = isFalProvider
+  const qualityDisabled = activeProfile.codexCli || isKrillAiProvider
+  const qualityOptions = isKrillAiProvider
+    ? [
+        { label: 'low', value: 'low' },
+      ]
+    : isFalProvider
     ? [
         { label: 'low', value: 'low' },
         { label: 'medium', value: 'medium' },
@@ -826,7 +832,7 @@ export default function InputBar() {
   const compressionHint = useHintTooltip({ enabled: () => compressionDisabled })
   const moderationHint = useHintTooltip({ enabled: () => moderationDisabled })
   const sizeHint = useHintTooltip({ enabled: () => isFalTextToImage })
-  const qualityHint = useHintTooltip({ enabled: () => settings.codexCli || isFalProvider })
+  const qualityHint = useHintTooltip({ enabled: () => activeProfile.codexCli || isFalProvider || isKrillAiProvider })
   const nLimitHint = useHintTooltip({ autoHideMs: 2000 })
   const maskTargetImage = maskDraft
     ? inputImages.find((img) => img.id === maskDraft.targetImageId) ?? null
@@ -1963,19 +1969,19 @@ export default function InputBar() {
       >
         <span className="text-gray-400 dark:text-gray-500 ml-1">质量</span>
         <Select
-          value={settings.codexCli ? 'auto' : isFalProvider && params.quality === 'auto' ? 'high' : params.quality}
+          value={isKrillAiProvider ? 'low' : activeProfile.codexCli ? 'auto' : isFalProvider && params.quality === 'auto' ? 'high' : params.quality}
           onChange={(val) => {
-            if (!settings.codexCli) setParams({ quality: val as any })
+            if (!qualityDisabled) setParams({ quality: val as any })
           }}
           options={qualityOptions}
-          disabled={settings.codexCli}
-          className={settings.codexCli
+          disabled={qualityDisabled}
+          className={qualityDisabled
             ? 'px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-gray-100/50 dark:bg-white/[0.05] opacity-50 cursor-not-allowed text-xs transition-all duration-200 shadow-sm'
             : selectClass}
         />
         <ButtonTooltip
-          visible={(settings.codexCli || isFalProvider) && qualityHint.visible}
-          text={isFalProvider ? <>fal.ai 不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 质量参数</> : 'Codex CLI 不支持质量参数'}
+          visible={(activeProfile.codexCli || isFalProvider || isKrillAiProvider) && qualityHint.visible}
+          text={isKrillAiProvider ? 'Krill AI 配置固定使用 low 质量' : isFalProvider ? <>fal.ai 不支持 <code className="rounded bg-white/10 px-1 py-0.5 font-mono">auto</code> 质量参数</> : 'Codex CLI 不支持质量参数'}
         />
       </label>
       <label className="flex flex-col gap-0.5">

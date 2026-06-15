@@ -27,6 +27,16 @@ describe('URL settings params', () => {
     })
   })
 
+  it('detects Krill AI API URLs from legacy URL params', () => {
+    const current = normalizeSettings(DEFAULT_SETTINGS)
+    const next = normalizeSettings({
+      ...current,
+      ...buildSettingsFromUrlParams(current, new URLSearchParams('apiUrl=https://api.krill-ai.com/v1&apiKey=test-key')),
+    })
+
+    expect(next.profiles.find((profile) => profile.id === next.activeProfileId)?.baseUrl).toBe('https://api.krill-ai.com/v1')
+  })
+
   it('uses model from URL params for OpenAI profiles', () => {
     const current = normalizeSettings(DEFAULT_SETTINGS)
     const next = normalizeSettings({

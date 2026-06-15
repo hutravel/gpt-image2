@@ -18,7 +18,7 @@ import type {
   ResponsesOutputItem,
 } from './types'
 import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_PARAMS } from './types'
-import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, validateApiProfile } from './lib/apiProfiles'
+import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, isKrillAiApiProfile, mergeImportedSettings, normalizeSettings, validateApiProfile } from './lib/apiProfiles'
 import { dismissAllTooltips } from './lib/tooltipDismiss'
 import { remapImageMentionsForOrder, replaceImageMentionsForApi } from './lib/promptImageMentions'
 import {
@@ -1243,8 +1243,12 @@ export const useStore = create<AppState>()(
         }
         const settings = normalizeSettings(merged)
         const shouldClearReusedProfile = st.reusedTaskApiProfileId && settings.activeProfileId === st.reusedTaskApiProfileId
+        const activeProfile = getActiveApiProfile(settings)
         return {
           settings,
+          ...(isKrillAiApiProfile(activeProfile) && st.params.quality !== 'low'
+            ? { params: { ...st.params, quality: 'low' as const } }
+            : {}),
           ...(shouldClearReusedProfile
             ? { reusedTaskApiProfileId: null, reusedTaskApiProfileName: null, reusedTaskApiProfileMissing: false }
             : {}),
