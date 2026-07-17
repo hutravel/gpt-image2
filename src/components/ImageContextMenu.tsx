@@ -166,6 +166,18 @@ export default function ImageContextMenu() {
   const handleEdit = async (e: React.MouseEvent) => {
     e.stopPropagation()
     setMenuInfo(null)
+
+    const referenceImage = menuInfo.imageId
+      ? inputImages.find((image) => image.id === menuInfo.imageId)
+      : null
+    if (referenceImage) {
+      setLightboxImageId(null)
+      window.dispatchEvent(new CustomEvent('edit-reference-image', {
+        detail: { imageId: referenceImage.id },
+      }))
+      return
+    }
+
     if (inputImages.length >= 16) {
       showToast('参考图数量已达上限（16 张），无法继续添加', 'error')
       return

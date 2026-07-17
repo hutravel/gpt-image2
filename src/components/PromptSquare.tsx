@@ -17,6 +17,7 @@ import {
 } from '../lib/promptSquareData'
 import { createInputImageFromUrl, useStore } from '../store'
 import { ArrowDownIcon, CloseIcon, CopyIcon, EditIcon, ExternalLinkIcon, RefreshIcon } from './icons'
+import Select from './Select'
 
 type LanguageFilter = 'all' | Exclude<SquareLanguage, 'unknown'>
 type ModeFilter = 'all' | SquareMode
@@ -294,6 +295,13 @@ export default function PromptSquare() {
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([category]) => category)
   }, [items])
+  const categorySelectOptions = useMemo(
+    () => [
+      { label: '全部分类', value: 'all' },
+      ...categoryOptions.map((category) => ({ label: category, value: category })),
+    ],
+    [categoryOptions],
+  )
 
   useEffect(() => {
     if (categoryFilter !== 'all' && !categoryOptions.includes(categoryFilter)) setCategoryFilter('all')
@@ -406,46 +414,70 @@ export default function PromptSquare() {
 
       <div className="sticky top-[calc(env(safe-area-inset-top,0px)+4.5rem)] z-30 mb-5 rounded-lg border border-gray-200 bg-white/95 px-3 py-2.5 shadow-sm backdrop-blur dark:border-white/[0.08] dark:bg-gray-950/90 md:py-3">
         <div className="grid gap-2.5 md:gap-3">
-          <div className="grid gap-2.5 md:gap-3 lg:grid-cols-[minmax(260px,360px)_minmax(280px,1fr)] lg:items-end">
-            <div className="min-w-0">
-              <div className="mb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">来源</div>
-              <div className="flex h-9 w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-white/[0.08] dark:bg-white/[0.03] md:h-10 md:p-1" role="tablist" aria-label="提示词来源">
-              {PROMPT_SOURCES.map((source) => {
-                const active = source.id === activeSourceId
-                return (
+          <div className="grid gap-3 md:grid-cols-12 md:gap-4">
+            <div className="contents">
+              <div className="min-w-0 md:order-1 md:col-span-6">
+                <div className="mb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">来源</div>
+                <div className="w-full rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-white/[0.08] dark:bg-white/[0.03]">
+                  <div className="grid grid-cols-3 gap-1 sm:grid-cols-6" role="tablist" aria-label="提示词来源">
+                    {PROMPT_SOURCES.map((source) => {
+                      const active = source.id === activeSourceId
+                      return (
+                        <button
+                          key={source.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => setActiveSourceId(source.id)}
+                          title={source.description}
+                          className={`h-8 min-w-0 whitespace-nowrap rounded-md px-1 text-[11px] font-medium transition ${active ? 'bg-white text-gray-900 shadow-sm dark:bg-white/[0.10] dark:text-white' : 'text-gray-500 hover:bg-white/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-200'}`}
+                        >
+                          {source.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+              <div className="min-w-0 md:order-6 md:col-span-4">
+                <div className="mb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">搜索</div>
+                <div className="flex gap-2">
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="搜索提示词"
+                    className="h-9 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-200 md:h-10"
+                  />
                   <button
-                    key={source.id}
                     type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setActiveSourceId(source.id)}
-                    title={source.description}
-                    className={`h-8 min-w-0 flex-1 rounded-md px-2 text-xs font-medium transition ${active ? 'bg-white text-gray-900 shadow-sm dark:bg-white/[0.10] dark:text-white' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                    onClick={() => void loadPrompts(activeSource, { force: true })}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-gray-800 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-200 md:h-10 md:w-10"
+                    title="刷新"
+                    aria-label="刷新广场"
                   >
-                    {source.label}
+                    <RefreshIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                   </button>
-                )
-              })}
+                </div>
               </div>
             </div>
-            <div className="min-w-0">
-              <div className="mb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">搜索</div>
-              <div className="flex gap-2">
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="搜索提示词"
-                  className="h-9 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-200 md:h-10 lg:max-w-80"
+            <div className="hidden md:contents">
+              <div className="min-w-0 md:order-2 md:col-span-3">
+                <SegmentedControl label="语言" options={LANGUAGE_OPTIONS} value={languageFilter} onChange={setLanguageFilter} />
+              </div>
+              <div className="min-w-0 md:order-3 md:col-span-3">
+                <SegmentedControl label="模式" options={MODE_OPTIONS} value={modeFilter} onChange={setModeFilter} />
+              </div>
+              <div className="min-w-0 md:order-4 md:col-span-4">
+                <SegmentedControl label="NSFW" options={NSFW_OPTIONS} value={nsfwFilter} onChange={setNsfwFilter} />
+              </div>
+              <div className="min-w-0 md:order-5 md:col-span-4">
+                <div className="mb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">分类</div>
+                <Select
+                  value={categoryFilter}
+                  onChange={(value) => setCategoryFilter(String(value))}
+                  options={categorySelectOptions}
+                  className="h-10 rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-100 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]"
                 />
-                <button
-                  type="button"
-                  onClick={() => void loadPrompts(activeSource, { force: true })}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-gray-800 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-200 md:h-10 md:w-10"
-                  title="刷新"
-                  aria-label="刷新广场"
-                >
-                  <RefreshIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                </button>
               </div>
             </div>
           </div>
@@ -458,39 +490,17 @@ export default function PromptSquare() {
               <SegmentedControl label="语言" options={LANGUAGE_OPTIONS} value={languageFilter} onChange={setLanguageFilter} />
               <SegmentedControl label="模式" options={MODE_OPTIONS} value={modeFilter} onChange={setModeFilter} />
               <SegmentedControl label="NSFW" options={NSFW_OPTIONS} value={nsfwFilter} onChange={setNsfwFilter} />
-              <label className="min-w-0">
-                <span className="mb-1 block text-[11px] font-medium text-gray-400 dark:text-gray-500">分类</span>
-                <select
+              <div className="min-w-0">
+                <div className="mb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">分类</div>
+                <Select
                   value={categoryFilter}
-                  onChange={(event) => setCategoryFilter(event.target.value)}
-                  className="h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-300"
-                >
-                  <option value="all">全部分类</option>
-                  {categoryOptions.map((category) => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
-              </label>
+                  onChange={(value) => setCategoryFilter(String(value))}
+                  options={categorySelectOptions}
+                  className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-100 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-300 dark:hover:bg-white/[0.06]"
+                />
+              </div>
             </div>
           </details>
-          <div className="hidden gap-3 sm:grid sm:grid-cols-2 md:block xl:grid xl:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_minmax(260px,1.2fr)_minmax(180px,0.8fr)]">
-          <SegmentedControl label="语言" options={LANGUAGE_OPTIONS} value={languageFilter} onChange={setLanguageFilter} />
-          <SegmentedControl label="模式" options={MODE_OPTIONS} value={modeFilter} onChange={setModeFilter} />
-          <SegmentedControl label="NSFW" options={NSFW_OPTIONS} value={nsfwFilter} onChange={setNsfwFilter} />
-          <label className="min-w-0">
-            <span className="mb-1 block text-[11px] font-medium text-gray-400 dark:text-gray-500">分类</span>
-            <select
-              value={categoryFilter}
-              onChange={(event) => setCategoryFilter(event.target.value)}
-              className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-gray-950/40 dark:text-gray-300"
-            >
-              <option value="all">全部分类</option>
-              {categoryOptions.map((category) => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-            </select>
-          </label>
-          </div>
         </div>
       </div>
 

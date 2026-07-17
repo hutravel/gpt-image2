@@ -450,6 +450,53 @@ input[type="number"] {
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.25);
 }
 
+/* 图片引用标签在输入框内展示缩略图和可读名称。 */
+.mention-tag.mention-image-tag {
+  gap: 4px;
+  height: 1.5em;
+  padding: 0;
+  cursor: pointer;
+  vertical-align: -0.3em;
+  background: transparent;
+  border-color: transparent;
+  color: #64748b;
+  box-shadow: none;
+}
+
+.mention-tag.mention-image-tag:hover {
+  background: transparent;
+  border-color: transparent;
+  color: #475569;
+}
+
+.mention-tag.mention-image-tag.selected {
+  background: transparent;
+  border-color: transparent;
+  color: #334155;
+  box-shadow: none;
+}
+
+.mention-image-thumbnail {
+  display: block;
+  width: 1.5em;
+  height: 1.5em;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.mention-image-label {
+  font-size: 0;
+  line-height: 1;
+}
+
+.mention-image-label::after {
+  content: attr(data-display-label);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
 @media (prefers-color-scheme: dark) {
   .mention-tag {
     background: rgba(59, 130, 246, 0.12);

@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ALL_FAVORITES_COLLECTION_ID, deleteFavoriteCollection, getTaskFavoriteCollectionIds, useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, createInputImageFromFile, deleteImageIfUnreferenced, removeMultipleTasks, getCachedImage, ensureImageCached, getActiveAgentRounds } from '../store'
-import { DEFAULT_PARAMS, type TaskRecord } from '../types'
+import { DEFAULT_PARAMS, type InputImage, type TaskRecord } from '../types'
 import { getActiveApiProfile, isKrillAiApiProfile, normalizeSettings } from '../lib/apiProfiles'
 import { DEFAULT_FAL_IMAGE_SIZE, getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
 import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getSelectedTextMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
@@ -189,6 +189,12 @@ function escapeHtml(text: string) {
 
 function getMentionTagHtml(text: string) {
   return `<span contenteditable="false" class="mention-tag" data-mention-text="${escapeHtml(getSelectedTextMentionLabel(text))}">${escapeHtml(text)}</span>`
+}
+
+function getImageMentionTagHtml(image: InputImage, imageIndex: number) {
+  const mentionText = getImageMentionLabel(imageIndex)
+  const imageLabel = `图片${imageIndex + 1}`
+  return `<span contenteditable="false" class="mention-tag mention-image-tag" data-mention-text="${escapeHtml(getSelectedTextMentionLabel(mentionText))}" data-image-id="${escapeHtml(image.id)}"><img class="mention-image-thumbnail" src="${escapeHtml(image.dataUrl)}" alt="" draggable="false"><span class="mention-image-label" data-display-label="${imageLabel}">${escapeHtml(mentionText)}</span></span>`
 }
 
 function syncMentionTagSelection(el: HTMLElement) {
@@ -683,6 +689,11 @@ export default function InputBar() {
   const [imageDragOverIndex, setImageDragOverIndex] = useState<number | null>(null)
   const [atImageMenuIndex, setAtImageMenuIndex] = useState(0)
   const [atImageMenuDismissed, setAtImageMenuDismissed] = useState(false)
+  const [imageMentionPreview, setImageMentionPreview] = useState<{
+    image: InputImage
+    left: number
+    top: number
+  } | null>(null)
   const [touchDragPreview, setTouchDragPreview] = useState<{ src: string; x: number; y: number } | null>(null)
   const handleRef = useRef<HTMLDivElement>(null)
   const dragTouchRef = useRef({ startY: 0, moved: false })
@@ -763,7 +774,7 @@ export default function InputBar() {
     ? maskDraft ? '遮罩编辑' : '生成图像'
     : '请先配置 API'
   const submitTooltipText = activeAgentIsRunning ? '停止生成' : '尚未完成 API 配置，请在右上角设置中进行'
-  const promptPlaceholder = '描述你想生成的图片，可输入 @ 来指定参考图...'
+  const promptPlaceholder = '输入想法或上传参考，@添加主体 , 和Agent一起创作'
   const submitCurrentMode = useCallback(() => {
     if (appMode === 'agent') {
       void submitAgentMessage()
@@ -783,6 +794,31 @@ export default function InputBar() {
     syncMentionTagSelection(el)
     setPrompt(getContentEditablePlainText(el))
   }, [setPrompt])
+  const showImageMentionPreview = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const tag = (event.target as HTMLElement).closest<HTMLElement>('.mention-image-tag')
+    if (!tag || !textareaRef.current?.contains(tag)) return
+
+    const image = inputImages.find((inputImage) => inputImage.id === tag.dataset.imageId)
+    if (!image) return
+
+    const tagRect = tag.getBoundingClientRect()
+    const previewWidth = 220
+    const previewHeight = 168
+    const previewGap = 8
+    const previewLeft = Math.min(Math.max(tagRect.left, 8), window.innerWidth - previewWidth - 8)
+    const hasSpaceAbove = tagRect.top >= previewHeight + previewGap + 8
+    const previewTop = hasSpaceAbove
+      ? tagRect.top - previewHeight - previewGap
+      : Math.min(tagRect.bottom + previewGap, window.innerHeight - previewHeight - 8)
+
+    setImageMentionPreview({ image, left: previewLeft, top: previewTop })
+  }, [inputImages])
+  const hideImageMentionPreview = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const tag = (event.target as HTMLElement).closest<HTMLElement>('.mention-image-tag')
+    const nextTag = (event.relatedTarget as HTMLElement | null)?.closest<HTMLElement>('.mention-image-tag')
+    if (tag && tag === nextTag) return
+    setImageMentionPreview(null)
+  }, [])
   const activeProvider = activeProfile.provider
   const isFalProvider = activeProvider === 'fal'
   const isKrillAiProvider = isKrillAiApiProfile(activeProfile)
@@ -893,10 +929,13 @@ export default function InputBar() {
 
     const mentionText = option.type === 'input' ? getImageMentionLabel(option.imageIndex) : option.insertText
     const nextCursor = query.start + mentionText.length
+    const mentionHtml = option.type === 'input'
+      ? getImageMentionTagHtml(inputImages[option.imageIndex]!, option.imageIndex)
+      : getMentionTagHtml(mentionText)
     if (el) {
       el.focus()
       setContentEditableSelection(el, query.start, cursor)
-      if (document.execCommand('insertHTML', false, getMentionTagHtml(mentionText))) {
+      if (document.execCommand('insertHTML', false, mentionHtml)) {
         setContentEditableCursor(el, nextCursor)
         syncPromptFromContentEditable()
         return
@@ -914,7 +953,7 @@ export default function InputBar() {
         setContentEditableCursor(textareaRef.current, next.cursor)
       }
     }, 0)
-  }, [atImageSourceCount, prompt, setPrompt, syncPromptFromContentEditable])
+  }, [atImageSourceCount, inputImages, prompt, setPrompt, syncPromptFromContentEditable])
 
 
 
@@ -1171,18 +1210,23 @@ export default function InputBar() {
     if (remember) setSettings({ referenceImageEditAction: choice })
   }, [setSettings])
 
-  const handleEditReferenceImage = useCallback((img: (typeof inputImages)[number], idx: number, isMaskTarget: boolean) => {
+  const handleEditReferenceImage = useCallback((
+    img: (typeof inputImages)[number],
+    idx: number,
+    isMaskTarget: boolean,
+    forceChoiceDialog = false,
+  ) => {
     if (isMaskTarget) {
       setMaskEditorImageId(img.id)
       return
     }
 
-    if (settings.referenceImageEditAction === 'replace-reference') {
+    if (!forceChoiceDialog && settings.referenceImageEditAction === 'replace-reference') {
       openReplaceReferenceFilePicker(idx, img.id)
       return
     }
 
-    if (settings.referenceImageEditAction === 'add-mask') {
+    if (!forceChoiceDialog && settings.referenceImageEditAction === 'add-mask') {
       setMaskEditorImageId(img.id)
       return
     }
@@ -1211,6 +1255,22 @@ export default function InputBar() {
       ],
     })
   }, [commitReferenceEditChoice, openReplaceReferenceFilePicker, setConfirmDialog, setMaskEditorImageId, settings.referenceImageEditAction])
+
+  useEffect(() => {
+    const openReferenceImageEditor = (event: Event) => {
+      const imageId = (event as CustomEvent<{ imageId?: string }>).detail?.imageId
+      if (!imageId) return
+
+      const imageIndex = inputImages.findIndex((image) => image.id === imageId)
+      const image = inputImages[imageIndex]
+      if (!image) return
+
+      handleEditReferenceImage(image, imageIndex, maskDraft?.targetImageId === image.id, true)
+    }
+
+    window.addEventListener('edit-reference-image', openReferenceImageEditor)
+    return () => window.removeEventListener('edit-reference-image', openReferenceImageEditor)
+  }, [handleEditReferenceImage, inputImages, maskDraft?.targetImageId])
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     await handleFilesRef.current(e.target.files || [])
@@ -1473,7 +1533,9 @@ export default function InputBar() {
     const html = prompt
       ? parts.map((part) =>
           part.type === 'mention'
-              ? `<span contenteditable="false" class="mention-tag" data-mention-text="${part.mentionText ?? getSelectedImageMentionLabel(part.imageIndex ?? 0)}">${part.text}</span>`
+              ? part.imageIndex != null
+                ? getImageMentionTagHtml(inputImages[part.imageIndex]!, part.imageIndex)
+                : `<span contenteditable="false" class="mention-tag" data-mention-text="${part.mentionText ?? getSelectedImageMentionLabel(part.imageIndex ?? 0)}">${part.text}</span>`
             : part.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         ).join('')
       : ''
@@ -1798,7 +1860,7 @@ export default function InputBar() {
           if (el) {
             el.focus()
             setContentEditableCursor(el, cursor)
-            if (document.execCommand('insertHTML', false, getMentionTagHtml(getImageMentionLabel(idx)))) {
+            if (document.execCommand('insertHTML', false, getImageMentionTagHtml(img, idx))) {
               syncPromptFromContentEditable()
               return
             }
@@ -2407,15 +2469,28 @@ export default function InputBar() {
               onKeyDown={handleKeyDown}
               onPaste={handlePromptPaste}
               onCopy={handlePromptCopy}
+              onMouseOver={showImageMentionPreview}
+              onMouseOut={hideImageMentionPreview}
+              onMouseDown={(event) => {
+                const tag = (event.target as HTMLElement).closest<HTMLElement>('.mention-image-tag')
+                if (tag && textareaRef.current?.contains(tag)) event.preventDefault()
+              }}
               onClick={(e) => {
                 const el = textareaRef.current
                 if (!el) return
                 const target = e.target as HTMLElement
-                if (target.classList.contains('mention-tag')) {
+                const mentionTag = target.closest<HTMLElement>('.mention-tag')
+                if (mentionTag?.dataset.imageId) {
+                  const imageId = mentionTag.dataset.imageId
+                  setImageMentionPreview(null)
+                  setLightboxImageId(imageId, inputImages.map((image) => image.id))
+                  return
+                }
+                if (mentionTag) {
                   const sel = window.getSelection()
                   if (sel) {
                     const range = document.createRange()
-                    range.selectNode(target)
+                    range.selectNode(mentionTag)
                     sel.removeAllRanges()
                     sel.addRange(range)
                     syncMentionTagSelection(el)
@@ -2428,11 +2503,45 @@ export default function InputBar() {
               aria-label={promptPlaceholder}
               className="col-start-1 row-start-1 min-h-[42px] w-full overflow-hidden ios-rounded-scroll-fix whitespace-pre-wrap break-words rounded-2xl border border-gray-200/60 bg-white/50 pl-4 pr-10 py-3 text-sm leading-relaxed shadow-sm outline-none transition-[border-color,box-shadow] duration-200 focus:ring-1 focus:ring-blue-300/40 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-100 dark:focus:ring-blue-500/30"
             />
+            {imageMentionPreview && createPortal(
+              <div
+                className="fixed z-[120] w-[220px] overflow-hidden rounded-xl border border-gray-200/80 bg-white p-1 shadow-xl dark:border-white/[0.12] dark:bg-gray-900"
+                style={{ left: imageMentionPreview.left, top: imageMentionPreview.top }}
+              >
+                <img
+                  src={imageMentionPreview.image.dataUrl}
+                  alt="引用图片预览"
+                  className="h-40 w-full rounded-lg object-cover"
+                />
+              </div>,
+              document.body,
+            )}
             {prompt.length === 0 && (
-              <div className={`prompt-placeholder col-start-1 row-start-1 pointer-events-none pl-4 pr-10 py-3 text-sm leading-relaxed text-gray-400 dark:text-gray-500${
+              <div
+                onClick={() => textareaRef.current?.focus()}
+                className={`prompt-placeholder z-10 col-start-1 row-start-1 pl-4 pr-10 py-3 text-sm leading-relaxed text-gray-400 dark:text-gray-500${
                 isMobile && mobileCollapsed ? ' truncate' : ''
-              }`}>
-                {promptPlaceholder}
+              }`}
+              >
+                <span>输入想法或上传参考，</span>
+                <button
+                  type="button"
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    if (!atImageLimit) fileInputRef.current?.click()
+                  }}
+                  disabled={atImageLimit}
+                  className="mx-1 inline-flex h-5 w-5 -translate-y-px items-center justify-center rounded-full border border-cyan-400 bg-white text-xs font-semibold leading-none text-cyan-500 shadow-sm transition-colors hover:border-cyan-500 hover:bg-cyan-50 hover:text-cyan-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-transparent disabled:text-gray-300 dark:border-cyan-400/80 dark:bg-white/[0.04] dark:text-cyan-300 dark:hover:bg-cyan-500/10 dark:disabled:border-gray-600 dark:disabled:text-gray-600"
+                  aria-label="上传参考图作为创作主体"
+                  title={uploadImageTooltipText}
+                >
+                  @
+                </button>
+                <span>添加主体，和Agent一起创作</span>
               </div>
             )}
             {prompt.length > 0 && (

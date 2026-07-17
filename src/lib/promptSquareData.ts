@@ -1,8 +1,11 @@
 export const PAGE_SIZE = 8
 export const DEFAULT_IMAGE_ASPECT_RATIO = '4 / 3'
 
-const CURRENT_IMAGE_REPO_BASE_URL = 'https://raw.githubusercontent.com/mrslimslim/awesome-prompt/main'
-const EVOLINK_IMAGE_REPO_BASE_URL = 'https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/main'
+const MEIGEN_IMAGE_BASE_URL = 'https://raw.githubusercontent.com/mrslimslim/awesome-prompt/main'
+const EVOLINK_IMAGE_BASE_URL = 'https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/main'
+const FREESTYLE_FLY_IMAGE_BASE_URL = 'https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data'
+const YOU_MIND_IMAGE_BASE_URL = 'https://raw.githubusercontent.com/YouMind-OpenLab/awesome-gpt-image-2/main'
+const ZERO_LU_IMAGE_BASE_URL = 'https://raw.githubusercontent.com/ZeroLu/awesome-gpt-image/main'
 
 export const PROMPT_SOURCES = [
   {
@@ -21,7 +24,7 @@ export const PROMPT_SOURCES = [
     ],
     chunkSize: 500,
     repoUrl: 'https://github.com/mrslimslim/awesome-prompt',
-    imageBaseUrl: CURRENT_IMAGE_REPO_BASE_URL,
+    imageBaseUrl: MEIGEN_IMAGE_BASE_URL,
   },
   {
     id: 'evolink' as const,
@@ -29,7 +32,7 @@ export const PROMPT_SOURCES = [
     description: 'awesome-gpt-image-2-API-and-Prompts',
     dataUrl: './data/prompts-evolink.json',
     repoUrl: 'https://github.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts',
-    imageBaseUrl: EVOLINK_IMAGE_REPO_BASE_URL,
+    imageBaseUrl: EVOLINK_IMAGE_BASE_URL,
   },
   {
     id: 'banana' as const,
@@ -38,6 +41,30 @@ export const PROMPT_SOURCES = [
     dataUrl: './data/prompts-banana.json',
     repoUrl: 'https://github.com/glidea/banana-prompt-quicker',
     imageBaseUrl: 'https://raw.githubusercontent.com/glidea/banana-prompt-quicker/main',
+  },
+  {
+    id: 'freestylefly' as const,
+    label: 'FreestyleFly',
+    description: 'awesome-gpt-image-2',
+    dataUrl: './data/prompts-freestylefly.json',
+    repoUrl: 'https://github.com/freestylefly/awesome-gpt-image-2',
+    imageBaseUrl: FREESTYLE_FLY_IMAGE_BASE_URL,
+  },
+  {
+    id: 'youmind' as const,
+    label: 'YouMind',
+    description: 'YouMind OpenLab GPT Image 2 与 Nano Banana Pro 提示词合集',
+    dataUrl: './data/prompts-youmind.json',
+    repoUrl: 'https://github.com/YouMind-OpenLab/awesome-gpt-image-2',
+    imageBaseUrl: YOU_MIND_IMAGE_BASE_URL,
+  },
+  {
+    id: 'zerolu' as const,
+    label: 'ZeroLu',
+    description: 'awesome-gpt-image',
+    dataUrl: './data/prompts-zerolu.json',
+    repoUrl: 'https://github.com/ZeroLu/awesome-gpt-image',
+    imageBaseUrl: ZERO_LU_IMAGE_BASE_URL,
   },
 ]
 

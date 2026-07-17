@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "mock:api": "node scripts/mock-image-api.mjs",
+    "sync:square": "node scripts/sync-prompt-square-sources.mjs",
     "build": "tsc -b && vite build",
     "deploy:cf": "npm run build && wrangler deploy",
     "preview": "vite preview",
