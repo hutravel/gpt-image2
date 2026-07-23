@@ -640,7 +640,9 @@ function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
     profile.apiMode === 'images' &&
     profile.codexCli === false &&
     profile.apiProxy === DEFAULT_OPENAI_API_PROXY &&
-    profile.streamImages === true &&
+    profile.responseFormatB64Json === undefined &&
+    profile.responseFormatUrl === true &&
+    profile.streamImages === false &&
     profile.streamPartialImages === DEFAULT_STREAM_PARTIAL_IMAGES
 }
 
