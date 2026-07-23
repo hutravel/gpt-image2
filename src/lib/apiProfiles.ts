@@ -19,7 +19,6 @@ import { readRuntimeEnv } from './runtimeEnv'
 import { isImportableConfigUrl } from './customProviderConfigUrl'
 
 const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1'
-const KRILL_AI_API_URL_MARKER = 'api.krill-ai.com'
 const RAW_DEFAULT_API_URL = readRuntimeEnv(import.meta.env.VITE_DEFAULT_API_URL)
 const DEFAULT_OPENAI_API_PROXY = readRuntimeEnv(import.meta.env.VITE_API_PROXY_AVAILABLE) === 'true'
 const DOCKER_DEPLOYMENT = readRuntimeEnv(import.meta.env.VITE_DOCKER_DEPLOYMENT) === 'true'
@@ -534,14 +533,6 @@ export function getApiProviderLabel(settings: Partial<AppSettings> | unknown, pr
 
 export function isOpenAICompatibleProvider(settings: Partial<AppSettings> | unknown, provider: ApiProvider): boolean {
   return provider === 'openai' || Boolean(getCustomProviderDefinition(settings, provider))
-}
-
-export function isKrillAiApiUrl(value: unknown): value is string {
-  return typeof value === 'string' && value.toLowerCase().includes(KRILL_AI_API_URL_MARKER)
-}
-
-export function isKrillAiApiProfile(profile: Pick<ApiProfile, 'baseUrl'>): boolean {
-  return isKrillAiApiUrl(profile.baseUrl)
 }
 
 export interface ImportedProviderSettings {

@@ -27,7 +27,7 @@ describe('URL settings params', () => {
     })
   })
 
-  it('detects Krill AI API URLs from legacy URL params', () => {
+  it('activates a new OpenAI profile from legacy URL params', () => {
     const current = normalizeSettings(DEFAULT_SETTINGS)
     const next = normalizeSettings({
       ...current,

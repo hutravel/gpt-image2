@@ -2076,26 +2076,6 @@ describe('reused task API profile', () => {
     expect(state.reusedTaskApiProfileMissing).toBe(false)
   })
 
-  it('sets current quality to low when switching to a Krill AI API profile', () => {
-    const krillProfile = createDefaultOpenAIProfile({
-      id: 'krill-profile',
-      apiKey: 'krill-key',
-      baseUrl: 'https://api.krill-ai.com/v1',
-    })
-
-    useStore.setState((state) => ({
-      settings: normalizeSettings({
-        ...state.settings,
-        profiles: [...state.settings.profiles, krillProfile],
-      }),
-      params: { ...DEFAULT_PARAMS, quality: 'high' },
-    }))
-
-    useStore.getState().setSettings({ activeProfileId: krillProfile.id })
-
-    expect(useStore.getState().params.quality).toBe('low')
-  })
-
   it('normalizes reused params to the current API profile when temporary reuse is disabled', async () => {
     useStore.setState({
       settings: normalizeSettings({

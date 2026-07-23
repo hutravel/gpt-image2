@@ -1,7 +1,7 @@
 import { fal } from '@fal-ai/client'
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
-import { createDefaultFalProfile, DEFAULT_FAL_BASE_URL, DEFAULT_SETTINGS } from './apiProfiles'
+import { createDefaultFalProfile, DEFAULT_SETTINGS } from './apiProfiles'
 import { callFalAiImageApi } from './falAiImageApi'
 
 vi.mock('@fal-ai/client', () => ({
@@ -25,7 +25,7 @@ describe('callFalAiImageApi', () => {
     vi.clearAllMocks()
   })
 
-  it('uses the default fal endpoint without proxyUrl', async () => {
+  it('configures the fal SDK with the profile API key only', async () => {
     falMock.subscribe.mockResolvedValue({
       requestId: 'req-1',
       data: { images: [{ b64_json: 'aW1hZ2U=' }] },
@@ -36,34 +36,11 @@ describe('callFalAiImageApi', () => {
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
       inputImageDataUrls: [],
-    }, createDefaultFalProfile({ apiKey: 'fal-key', baseUrl: DEFAULT_FAL_BASE_URL }))
+    }, createDefaultFalProfile({ apiKey: 'fal-key' }))
 
     expect(falMock.config).toHaveBeenCalledWith({
       credentials: 'fal-key',
       suppressLocalCredentialsWarning: true,
-    })
-  })
-
-  it('passes custom fal API URL to the SDK proxyUrl option', async () => {
-    falMock.subscribe.mockResolvedValue({
-      requestId: 'req-1',
-      data: { images: [{ b64_json: 'aW1hZ2U=' }] },
-    })
-
-    await callFalAiImageApi({
-      settings: DEFAULT_SETTINGS,
-      prompt: 'prompt',
-      params: { ...DEFAULT_PARAMS },
-      inputImageDataUrls: [],
-    }, createDefaultFalProfile({
-      apiKey: 'fal-key',
-      baseUrl: 'https://fal-proxy.example.com/api/fal/',
-    }))
-
-    expect(falMock.config).toHaveBeenCalledWith({
-      credentials: 'fal-key',
-      suppressLocalCredentialsWarning: true,
-      proxyUrl: 'https://fal-proxy.example.com/api/fal',
     })
   })
 })

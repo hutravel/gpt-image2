@@ -50,18 +50,4 @@ describe('parameter compatibility', () => {
     expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings).size).toBe('1360x1024')
     expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings, { hasInputImages: true }).size).toBe('auto')
   })
-
-  it('forces low quality for Krill AI API URLs', () => {
-    const krillProfile = createDefaultOpenAIProfile({
-      apiKey: 'krill-key',
-      baseUrl: 'https://api.krill-ai.com/v1',
-    })
-    const settings = normalizeSettings({
-      ...DEFAULT_SETTINGS,
-      profiles: [krillProfile],
-      activeProfileId: krillProfile.id,
-    })
-
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, quality: 'high' }, settings).quality).toBe('low')
-  })
 })

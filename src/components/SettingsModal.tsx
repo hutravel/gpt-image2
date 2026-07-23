@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { normalizeBaseUrl } from '../lib/api'
 import { isApiProxyAvailable, isApiProxyLocked, readClientDevProxyConfig } from '../lib/devProxy'
-import { useStore, exportData, importData, clearData, type SettingsTab } from '../store'
+import { useStore, exportData, importData, clearData, hasActiveDataOperations, type SettingsTab } from '../store'
 import {
   createDefaultOpenAIProfile,
   DEFAULT_FAL_BASE_URL,
@@ -180,6 +180,66 @@ const DEFAULT_CUSTOM_PROVIDER_MANIFEST = {
   },
 }
 
+const CUSTOM_ASYNC_ENDPOINT_PROVIDER_ID = 'custom-async-endpoint'
+const LEGACY_FAST_AI_TASKS_PROVIDER_ID = 'custom-fast-ai-tasks'
+
+function createCustomAsyncEndpointProvider(endpointPath: string): CustomProviderDefinition {
+  return {
+    id: CUSTOM_ASYNC_ENDPOINT_PROVIDER_ID,
+    name: '自定义异步端点',
+    submit: {
+      path: `${endpointPath}/generations`,
+      method: 'POST',
+      contentType: 'json',
+      body: {
+        model: '$profile.model',
+        prompt: '$prompt',
+        size: '$params.size',
+        quality: '$params.quality',
+        output_format: '$params.output_format',
+        output_compression: '$params.output_compression',
+        moderation: '$params.moderation',
+        n: '$params.n',
+        image_urls: '$inputImages.dataUrls',
+      },
+      taskIdPath: 'id',
+    },
+    editSubmit: {
+      path: `${endpointPath}/edits`,
+      method: 'POST',
+      contentType: 'multipart',
+      body: {
+        model: '$profile.model',
+        prompt: '$prompt',
+        size: '$params.size',
+        quality: '$params.quality',
+        output_format: '$params.output_format',
+        output_compression: '$params.output_compression',
+        moderation: '$params.moderation',
+        n: '$params.n',
+      },
+      files: [
+        { field: 'image[]', source: 'inputImages', array: true },
+        { field: 'mask', source: 'mask' },
+      ],
+      taskIdPath: 'id',
+    },
+    poll: {
+      path: `${endpointPath}/{task_id}`,
+      method: 'GET',
+      intervalSeconds: 2,
+      statusPath: 'status',
+      successValues: ['succeeded'],
+      failureValues: ['failed'],
+      errorPath: 'error',
+      result: {
+        imageUrlPaths: ['result.*.file_url'],
+        b64JsonPaths: [],
+      },
+    },
+  }
+}
+
 function createDefaultCustomProviderForm(): CustomProviderForm {
   return {
     json: JSON.stringify(DEFAULT_CUSTOM_PROVIDER_MANIFEST, null, 2),
@@ -336,6 +396,8 @@ export default function SettingsModal() {
   const setReusedTaskApiProfile = useStore((s) => s.setReusedTaskApiProfile)
   const setConfirmDialog = useStore((s) => s.setConfirmDialog)
   const showToast = useStore((s) => s.showToast)
+  const tasks = useStore((s) => s.tasks)
+  const agentConversations = useStore((s) => s.agentConversations)
   const importInputRef = useRef<HTMLInputElement>(null)
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const profileMenuTriggerRef = useRef<HTMLButtonElement>(null)
@@ -354,6 +416,9 @@ export default function SettingsModal() {
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [profileMenuMaxHeight, setProfileMenuMaxHeight] = useState(DEFAULT_DROPDOWN_MAX_HEIGHT)
   const [showCustomProviderImport, setShowCustomProviderImport] = useState(false)
+  const [showEndpointSettings, setShowEndpointSettings] = useState(false)
+  const [endpointSettingsSelection, setEndpointSettingsSelection] = useState<'images' | 'custom'>('images')
+  const [customEndpointPathInput, setCustomEndpointPathInput] = useState('tasks')
   const [showZipDownloadRouteManager, setShowZipDownloadRouteManager] = useState(false)
   const [editingCustomProviderId, setEditingCustomProviderId] = useState<string | null>(null)
   const [customProviderForm, setCustomProviderForm] = useState<CustomProviderForm>(createDefaultCustomProviderForm())
@@ -368,6 +433,7 @@ export default function SettingsModal() {
   const [importTasks, setImportTasks] = useState(true)
   const [clearConfig, setClearConfig] = useState(true)
   const [clearTasks, setClearTasks] = useState(true)
+  const [isExportingData, setIsExportingData] = useState(false)
   const [isImportingData, setIsImportingData] = useState(false)
   const [isImportingJson, setIsImportingJson] = useState(false)
   const [draggedProfileId, setDraggedProfileId] = useState<string | null>(null)
@@ -395,6 +461,12 @@ export default function SettingsModal() {
   const activeCustomProvider = draft.customProviders.find((provider) => provider.id === activeProfile.provider)
   const activeProfileApiProxyEligible = isProfileApiProxyEligible(draft, activeProfile)
   const activeCustomProviderAsync = isAsyncCustomProvider(activeCustomProvider)
+  const activeEndpoint = activeProfile.provider === CUSTOM_ASYNC_ENDPOINT_PROVIDER_ID || activeProfile.provider === LEGACY_FAST_AI_TASKS_PROVIDER_ID
+    ? 'custom'
+    : 'images'
+  const activeApiEndpointLabel = activeCustomProvider
+    ? `${activeCustomProviderAsync ? '异步任务 API' : '自定义 API'} (/${activeCustomProvider.submit.path.replace(/^\/+/, '')})`
+    : 'Images API (/v1/images)'
   const apiProxyChecked = activeProfileApiProxyEligible && (apiProxyLocked || activeProfile.apiProxy)
   const apiProxyEnabled = apiProxyAvailable && activeProfileApiProxyEligible && apiProxyChecked
   const defaultProviderOrder = ['openai', 'fal', ...draft.customProviders.map(p => p.id)]
@@ -562,20 +634,24 @@ export default function SettingsModal() {
       const nextApiProxy = isProfileApiProxyEligible(nextDraft, profile) && apiProxyAvailable ? (apiProxyLocked || profile.apiProxy) : false
       const shouldKeepEmptyBaseUrl = profile.provider !== 'fal' && nextApiProxy && !profile.baseUrl.trim()
       const normalizedBaseUrl = shouldKeepEmptyBaseUrl ? '' : normalizeBaseUrl(profile.baseUrl.trim() || DEFAULT_SETTINGS.baseUrl)
+      const isOpenAIProvider = profile.provider === 'openai'
+      const isFalProvider = profile.provider === 'fal'
+      const fallbackModel = isFalProvider
+        ? DEFAULT_FAL_MODEL
+        : getDefaultModelForMode(profile.apiMode)
       return {
         ...profile,
         name: profile.name.trim() || (profile.id === DEFAULT_OPENAI_PROFILE_ID ? '默认' : '新配置'),
-        provider: 'openai',
         baseUrl: normalizedBaseUrl,
-        model: DEFAULT_IMAGES_MODEL,
+        model: profile.model.trim() || fallbackModel,
         timeout: Number.isFinite(Number(profile.timeout)) && Number(profile.timeout) > 0
           ? Math.trunc(Number(profile.timeout))
           : DEFAULT_SETTINGS.timeout,
-        apiMode: 'images',
+        apiMode: isOpenAIProvider ? profile.apiMode : 'images',
         apiProxy: nextApiProxy,
-        codexCli: profile.codexCli === true,
-        responseFormatB64Json: profile.responseFormatB64Json === true ? true : undefined,
-        streamImages: profile.streamImages === true,
+        codexCli: isOpenAIProvider && profile.codexCli === true,
+        responseFormatB64Json: isOpenAIProvider && profile.responseFormatB64Json === true ? true : undefined,
+        streamImages: isOpenAIProvider && profile.streamImages === true,
         streamPartialImages: normalizeStreamPartialImages(profile.streamPartialImages),
       }
     })
@@ -715,6 +791,10 @@ export default function SettingsModal() {
   }
 
   const handleClose = () => {
+    if (showEndpointSettings) {
+      setShowEndpointSettings(false)
+      return
+    }
     if (showZipDownloadRouteManager) {
       setShowZipDownloadRouteManager(false)
       return
@@ -785,17 +865,38 @@ export default function SettingsModal() {
     }
   }
 
-  useCloseOnEscape(showSettings, handleClose)
+  const dataTransferMode = isExportingData ? 'export' : isImportingData ? 'import' : null
+  const hasRunningOperations = hasActiveDataOperations(tasks, agentConversations)
+
+  useCloseOnEscape(showSettings && !dataTransferMode, handleClose)
   usePreventBackgroundScroll(showSettings, showZipDownloadRouteManager ? zipDownloadRouteScrollBoundaryRef : showCustomProviderImport ? customProviderScrollBoundaryRef : settingsScrollBoundaryRef)
 
   if (!showSettings) return null
 
+  const handleExport = async () => {
+    if (exportTasks && hasRunningOperations) {
+      showToast('当前有任务正在进行，请完成或停止后再导出', 'error')
+      return
+    }
+    setIsExportingData(true)
+    try {
+      await exportData({ exportConfig, exportTasks })
+    } finally {
+      setIsExportingData(false)
+    }
+  }
+
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
+    const files = Array.from(e.target.files ?? [])
+    if (files.length) {
+      if (importTasks && hasRunningOperations) {
+        showToast('当前有任务正在进行，请完成或停止后再导入', 'error')
+        e.target.value = ''
+        return
+      }
       setIsImportingData(true)
       try {
-        const imported = await importData(file, { importConfig, importTasks })
+        const imported = await importData(files, { importConfig, importTasks })
         if (imported) {
           const nextDraft = normalizeSettings(useStore.getState().settings)
           setDraft(nextDraft)
@@ -1035,6 +1136,56 @@ export default function SettingsModal() {
     updateActiveProfile(switchApiProfileProvider(activeProfile, provider, customProvider), true)
   }
 
+  const openEndpointSettings = () => {
+    const savedEndpointPath = activeCustomProvider?.submit.path.replace(/\/generations\/?$/, '').replace(/^\/+|\/+$/g, '')
+    setEndpointSettingsSelection(activeEndpoint)
+    setCustomEndpointPathInput(savedEndpointPath || 'tasks')
+    setShowEndpointSettings(true)
+  }
+
+  const selectImagesEndpoint = () => {
+    const nextProfile = switchApiProfileProvider(activeProfile, 'openai')
+    commitSettings({
+      ...draft,
+      profiles: draft.profiles.map((profile) => profile.id === activeProfile.id ? nextProfile : profile),
+    })
+    setShowEndpointSettings(false)
+  }
+
+  const applyCustomEndpoint = () => {
+    const endpointPath = customEndpointPathInput.trim().replace(/^\/+|\/+$/g, '')
+    if (!endpointPath) {
+      showToast('请输入自定义端点', 'error')
+      return
+    }
+
+    const customEndpointProvider = createCustomAsyncEndpointProvider(endpointPath)
+    const existingProvider = draft.customProviders.find((provider) => provider.id === CUSTOM_ASYNC_ENDPOINT_PROVIDER_ID)
+    const nextCustomProviders = existingProvider
+      ? draft.customProviders.map((provider) => provider.id === CUSTOM_ASYNC_ENDPOINT_PROVIDER_ID ? customEndpointProvider : provider)
+      : [...draft.customProviders, customEndpointProvider]
+    const nextProfile = {
+      ...switchApiProfileProvider(activeProfile, CUSTOM_ASYNC_ENDPOINT_PROVIDER_ID, customEndpointProvider),
+      model: DEFAULT_IMAGES_MODEL,
+      apiMode: 'images' as const,
+      apiProxy: false,
+    }
+    commitSettings({
+      ...draft,
+      customProviders: nextCustomProviders,
+      profiles: draft.profiles.map((profile) => profile.id === activeProfile.id ? nextProfile : profile),
+    })
+    setShowEndpointSettings(false)
+  }
+
+  const selectApiEndpoint = (endpoint: 'images' | 'tasks') => {
+    if (endpoint === 'images') {
+      selectImagesEndpoint()
+      return
+    }
+    setEndpointSettingsSelection('custom')
+  }
+
   const updateCustomProviderForm = (patch: Partial<CustomProviderForm>) => {
     setCustomProviderForm((current) => ({ ...current, ...patch }))
     setCustomProviderImportError(null)
@@ -1185,12 +1336,25 @@ export default function SettingsModal() {
         <div data-no-drag-select className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/30 backdrop-blur-sm animate-overlay-in"
-        onClick={handleClose}
+        onClick={() => {
+          if (!dataTransferMode) handleClose()
+        }}
       />
       <div
         ref={settingsScrollBoundaryRef}
         className="relative z-10 w-full max-w-3xl rounded-3xl border border-white/50 bg-white/95 shadow-2xl ring-1 ring-black/5 animate-modal-in dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10 flex h-[85vh] sm:h-[600px] flex-col overflow-hidden"
       >
+        {dataTransferMode && (
+          <div className="absolute inset-0 z-[100] flex cursor-wait items-center justify-center bg-white/45 backdrop-blur-[1px] dark:bg-gray-900/45">
+            <div className="flex items-center gap-3 rounded-2xl border border-gray-200/80 bg-white/95 px-5 py-3 text-sm font-medium text-gray-700 shadow-xl dark:border-white/[0.1] dark:bg-gray-800/95 dark:text-gray-200">
+              <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              {dataTransferMode === 'export' ? '正在导出数据，请稍候...' : '正在导入数据，请稍候...'}
+            </div>
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between shrink-0 p-5 border-b border-gray-100 dark:border-white/[0.08]">
           <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
@@ -1204,6 +1368,7 @@ export default function SettingsModal() {
             <span className="text-sm text-gray-400 dark:text-gray-500 font-mono select-none">v{__APP_VERSION__}</span>
             <button
               onClick={handleClose}
+              disabled={Boolean(dataTransferMode)}
               className="rounded-full p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/[0.06] dark:hover:text-gray-200"
               aria-label="关闭"
             >
@@ -1487,32 +1652,6 @@ export default function SettingsModal() {
                     <span className="relative inline-flex">
                       <button
                         type="button"
-                        onClick={() => confirmCopyProfileImportUrl(activeProfile)}
-                        onMouseEnter={() => setProfileImportUrlTooltipVisible(true)}
-                        onMouseLeave={() => setProfileImportUrlTooltipVisible(false)}
-                        onFocus={() => setProfileImportUrlTooltipVisible(true)}
-                        onBlur={() => setProfileImportUrlTooltipVisible(false)}
-                        onTouchStart={() => {
-                          clearProfileImportUrlTooltipTimer()
-                          profileImportUrlTooltipTimerRef.current = window.setTimeout(() => {
-                            setProfileImportUrlTooltipVisible(true)
-                            profileImportUrlTooltipTimerRef.current = null
-                          }, 450)
-                        }}
-                        onTouchEnd={clearProfileImportUrlTooltipTimer}
-                        onTouchCancel={clearProfileImportUrlTooltipTimer}
-                        className="flex h-5 w-5 items-center justify-center rounded-md text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/[0.08] dark:hover:text-gray-200"
-                        aria-label={`复制导入配置「${activeProfile.name}」的 URL`}
-                      >
-                        <LinkIcon className="h-3.5 w-3.5" />
-                      </button>
-                      <ViewportTooltip visible={profileImportUrlTooltipVisible} className="whitespace-nowrap">
-                        复制导入 URL
-                      </ViewportTooltip>
-                    </span>
-                    <span className="relative inline-flex">
-                      <button
-                        type="button"
                         onClick={duplicateActiveProfile}
                         onMouseEnter={() => setDuplicateProfileTooltipVisible(true)}
                         onMouseLeave={() => setDuplicateProfileTooltipVisible(false)}
@@ -1703,12 +1842,23 @@ export default function SettingsModal() {
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-xl border border-gray-200/70 bg-gray-50/70 px-3 py-2.5 dark:border-white/[0.08] dark:bg-white/[0.03]">
-                  <div className="text-xs text-gray-500 dark:text-gray-500">API 接口</div>
-                  <div className="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">Images API (/v1/images)</div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs text-gray-500 dark:text-gray-500">API 接口</div>
+                    <button
+                      type="button"
+                      onClick={openEndpointSettings}
+                      className="min-h-8 shrink-0 cursor-pointer rounded-lg border border-gray-200/80 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-gray-300 dark:hover:bg-white/[0.08] dark:hover:text-white"
+                    >
+                      设置
+                    </button>
+                  </div>
+                  <div className="mt-1 break-all text-sm font-medium text-gray-800 dark:text-gray-100">
+                    {activeApiEndpointLabel}
+                  </div>
                 </div>
                 <div className="rounded-xl border border-gray-200/70 bg-gray-50/70 px-3 py-2.5 dark:border-white/[0.08] dark:bg-white/[0.03]">
                   <div className="text-xs text-gray-500 dark:text-gray-500">模型 ID</div>
-                  <div className="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">{DEFAULT_IMAGES_MODEL}</div>
+                  <div className="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">{activeProfile.model || DEFAULT_IMAGES_MODEL}</div>
                 </div>
               </div>
 
@@ -1836,11 +1986,11 @@ export default function SettingsModal() {
                     />
                   </div>
                   <button
-                    onClick={() => exportData({ exportConfig, exportTasks })}
-                    disabled={!exportConfig && !exportTasks}
+                    onClick={handleExport}
+                    disabled={(!exportConfig && !exportTasks) || isExportingData}
                     className="w-full rounded-xl bg-gray-100/80 px-4 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-200 hover:text-gray-900 disabled:opacity-50 disabled:hover:bg-gray-100/80 disabled:hover:text-gray-700 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1] dark:hover:text-white dark:disabled:hover:bg-white/[0.06] dark:disabled:hover:text-gray-300 flex items-center justify-center gap-2"
                   >
-                    导出所选数据
+                    {isExportingData ? '导出中...' : '导出所选数据'}
                   </button>
                 </div>
 
@@ -1882,6 +2032,7 @@ export default function SettingsModal() {
                     ref={importInputRef}
                     type="file"
                     accept=".zip"
+                    multiple
                     className="hidden"
                     onChange={handleImport}
                   />
@@ -1926,6 +2077,96 @@ export default function SettingsModal() {
         </div>
       </div>
       </div>
+
+        {showEndpointSettings && createPortal(
+          <div
+            data-no-drag-select
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4"
+            onClick={() => setShowEndpointSettings(false)}
+          >
+            <div className="absolute inset-0 bg-black/20 backdrop-blur-md animate-overlay-in dark:bg-black/40" />
+            <div
+              className="relative z-10 w-full max-w-sm rounded-3xl border border-white/50 bg-white/95 p-6 shadow-2xl ring-1 ring-black/5 animate-confirm-in dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mb-5 flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-bold text-gray-800 dark:text-gray-100">设置 API 接口</h3>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">选择当前配置使用的图片生成端点。</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowEndpointSettings(false)}
+                  className="min-h-11 min-w-11 shrink-0 rounded-full p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:hover:bg-white/[0.06] dark:hover:text-gray-200"
+                  aria-label="关闭接口设置"
+                >
+                  <CloseIcon className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => selectApiEndpoint('images')}
+                  className={`flex min-h-14 w-full cursor-pointer items-center justify-between rounded-2xl border px-4 py-3 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${endpointSettingsSelection === 'images' ? 'border-blue-500/40 bg-blue-50 text-blue-700 dark:border-blue-400/40 dark:bg-blue-500/10 dark:text-blue-300' : 'border-gray-200/80 bg-gray-50/70 text-gray-700 hover:bg-gray-100 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:hover:bg-white/[0.06]'}`}
+                >
+                  <span>
+                    <span className="block text-sm font-semibold">Images</span>
+                    <span className="mt-0.5 block text-xs font-normal opacity-70">默认 · /v1/images</span>
+                  </span>
+                  <span className={`h-4 w-4 rounded-full border-2 ${endpointSettingsSelection === 'images' ? 'border-blue-500 bg-blue-500 ring-4 ring-blue-500/10' : 'border-gray-300 dark:border-gray-600'}`} />
+                </button>
+
+                <div
+                  role="radio"
+                  aria-checked={endpointSettingsSelection === 'custom'}
+                  tabIndex={0}
+                  onClick={() => setEndpointSettingsSelection('custom')}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return
+                    event.preventDefault()
+                    setEndpointSettingsSelection('custom')
+                  }}
+                  className={`cursor-pointer rounded-2xl border px-4 py-3 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${endpointSettingsSelection === 'custom' ? 'border-blue-500/40 bg-blue-50 text-blue-700 dark:border-blue-400/40 dark:bg-blue-500/10 dark:text-blue-300' : 'border-gray-200/80 bg-gray-50/70 text-gray-700 hover:bg-gray-100 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:hover:bg-white/[0.06]'}`}
+                >
+                  <div className="flex min-h-8 items-center justify-between gap-3">
+                    <span>
+                      <span className="block text-sm font-semibold">自定义</span>
+                      <span className="mt-0.5 block text-xs font-normal opacity-70">异步任务端点</span>
+                    </span>
+                    <span className={`h-4 w-4 rounded-full border-2 ${endpointSettingsSelection === 'custom' ? 'border-blue-500 bg-blue-500 ring-4 ring-blue-500/10' : 'border-gray-300 dark:border-gray-600'}`} />
+                  </div>
+
+                  {endpointSettingsSelection === 'custom' && (
+                    <label className="mt-3 block" onClick={(event) => event.stopPropagation()}>
+                      <span className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-300">相对端点</span>
+                      <div className="flex items-center rounded-xl border border-blue-300/70 bg-white px-3 shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-blue-400/30 dark:bg-gray-900/70">
+                        <input
+                          value={customEndpointPathInput}
+                          onChange={(event) => setCustomEndpointPathInput(event.target.value)}
+                          placeholder="tasks"
+                          autoFocus
+                          className="min-w-0 flex-1 bg-transparent py-2.5 text-sm text-gray-800 outline-none placeholder:text-gray-400 dark:text-gray-100"
+                        />
+                      </div>
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              {endpointSettingsSelection === 'custom' && (
+                <button
+                  type="button"
+                  onClick={applyCustomEndpoint}
+                  className="mt-4 min-h-11 w-full cursor-pointer rounded-xl bg-blue-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+                >
+                  应用自定义端点
+                </button>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
 
         {showZipDownloadRouteManager && createPortal(
           <div

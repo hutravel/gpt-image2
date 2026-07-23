@@ -18,7 +18,7 @@ import type {
   ResponsesOutputItem,
 } from './types'
 import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_PARAMS } from './types'
-import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, isKrillAiApiProfile, mergeImportedSettings, normalizeSettings, validateApiProfile } from './lib/apiProfiles'
+import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, validateApiProfile } from './lib/apiProfiles'
 import { dismissAllTooltips } from './lib/tooltipDismiss'
 import { remapImageMentionsForOrder, replaceImageMentionsForApi } from './lib/promptImageMentions'
 import {
@@ -52,7 +52,7 @@ import { validateMaskMatchesImage } from './lib/canvasImage'
 import { orderInputImagesForMask } from './lib/mask'
 import { getChangedParams, normalizeParamsForSettings } from './lib/paramCompatibility'
 import { createTransparentOutputMeta, getTransparentRequestParams, removeKeyedBackgroundFromDataUrl } from './lib/transparentImage'
-import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate'
+import { zip, unzip, strToU8, strFromU8 } from 'fflate'
 
 export const ALL_FAVORITES_COLLECTION_ID = '__all_favorites__'
 export const DEFAULT_FAVORITE_COLLECTION_ID = '__default_favorites__'
@@ -1243,12 +1243,8 @@ export const useStore = create<AppState>()(
         }
         const settings = normalizeSettings(merged)
         const shouldClearReusedProfile = st.reusedTaskApiProfileId && settings.activeProfileId === st.reusedTaskApiProfileId
-        const activeProfile = getActiveApiProfile(settings)
         return {
           settings,
-          ...(isKrillAiApiProfile(activeProfile) && st.params.quality !== 'low'
-            ? { params: { ...st.params, quality: 'low' as const } }
-            : {}),
           ...(shouldClearReusedProfile
             ? { reusedTaskApiProfileId: null, reusedTaskApiProfileName: null, reusedTaskApiProfileMissing: false }
             : {}),
@@ -4729,107 +4725,127 @@ export interface ExportOptions {
   exportTasks?: boolean
 }
 
+const EXPORT_PART_TARGET_BYTES = 256 * 1024 * 1024
+const MAX_EXPORT_ZIP_BYTES = 2 * 1024 * 1024 * 1024
+
+function runZip(files: Record<string, Uint8Array | [Uint8Array, { mtime: Date; level?: 0 }]>) {
+  return new Promise<Uint8Array>((resolve, reject) => {
+    zip(files, { level: 6 }, (error, bytes) => error ? reject(error) : resolve(bytes))
+  })
+}
+
+function runUnzip(bytes: Uint8Array) {
+  return new Promise<Record<string, Uint8Array>>((resolve, reject) => {
+    unzip(bytes, (error, files) => error ? reject(error) : resolve(files))
+  })
+}
+
+function estimateDataUrlBytes(dataUrl: string) {
+  const payload = dataUrl.slice(dataUrl.indexOf(',') + 1)
+  return Math.ceil(payload.length * 0.75)
+}
+
+function partitionExportImages<T extends { dataUrl: string }>(images: T[]) {
+  const parts: T[][] = [[]]
+  let currentPartBytes = 0
+  for (const image of images) {
+    const imageBytes = estimateDataUrlBytes(image.dataUrl)
+    if (imageBytes >= MAX_EXPORT_ZIP_BYTES) throw new Error('单张图片超过 2 GB，无法生成浏览器备份。')
+    if (currentPartBytes > 0 && currentPartBytes + imageBytes >= EXPORT_PART_TARGET_BYTES) {
+      parts.push([])
+      currentPartBytes = 0
+    }
+    parts[parts.length - 1].push(image)
+    currentPartBytes += imageBytes
+  }
+  return parts
+}
+
+function createExportBlob(bytes: Uint8Array) {
+  if (bytes.byteLength >= MAX_EXPORT_ZIP_BYTES) throw new Error('生成的备份分片超过 2 GB，请重试。')
+  const blobParts: BlobPart[] = []
+  const chunkBytes = 256 * 1024 * 1024
+  for (let offset = 0; offset < bytes.byteLength; offset += chunkBytes) {
+    blobParts.push(bytes.subarray(offset, Math.min(offset + chunkBytes, bytes.byteLength)) as BlobPart)
+  }
+  return new Blob(blobParts, { type: 'application/zip' })
+}
+
+function downloadExportBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+export function hasActiveDataOperations(tasks: TaskRecord[], agentConversations: AgentConversation[]) {
+  return tasks.some((task) => task.status === 'running' || task.falRecoverable || task.customRecoverable)
+    || agentConversations.some((conversation) => conversation.rounds.some((round) => round.status === 'running'))
+}
+
 /** 导出数据为 ZIP */
 export async function exportData(options: ExportOptions = { exportConfig: true, exportTasks: true }) {
   try {
     const tasks = options.exportTasks ? await getAllTasks() : []
     const images = options.exportTasks ? await getAllImages() : []
     const { settings, agentConversations, favoriteCollections, defaultFavoriteCollectionId } = useStore.getState()
+    if (options.exportTasks && hasActiveDataOperations(tasks, agentConversations)) {
+      throw new Error('当前有任务正在进行，请完成或停止后再导出')
+    }
     const exportedAt = Date.now()
-    const imageCreatedAtFallback = new Map<string, number>()
+    const imageParts = options.exportTasks ? partitionExportImages(images) : [[]]
+    const backupId = `${exportedAt}-${Math.random().toString(36).slice(2, 10)}`
+    const fileNameBase = `operation-image-platform-backup_${formatExportFileTime(new Date(exportedAt))}`
 
-    if (options.exportTasks) {
-      for (const task of tasks) {
-        for (const id of [
-          ...(task.inputImageIds || []),
-          ...(task.maskImageId ? [task.maskImageId] : []),
-          ...(task.outputImages || []),
-          ...(task.transparentOriginalImages || []),
-          ...(task.streamPartialImageIds || []),
-        ]) {
-          if (!id) continue
-          const prev = imageCreatedAtFallback.get(id)
-          if (prev == null || task.createdAt < prev) {
-            imageCreatedAtFallback.set(id, task.createdAt)
-          }
-        }
-      }
-    }
-
-    const imageFiles: ExportData['imageFiles'] = {}
-    const thumbnailFiles: NonNullable<ExportData['thumbnailFiles']> = {}
-    const zipFiles: Record<string, Uint8Array | [Uint8Array, { mtime: Date }]> = {}
-
-    if (options.exportTasks) {
-      for (const img of images) {
-        const { ext, bytes } = dataUrlToBytes(img.dataUrl)
-        const path = `images/${img.id}.${ext}`
-        const createdAt = img.createdAt ?? imageCreatedAtFallback.get(img.id) ?? exportedAt
-        imageFiles[img.id] = {
-          path,
-          createdAt,
-          source: img.source,
-          width: img.width,
-          height: img.height,
-        }
-        zipFiles[path] = [bytes, { mtime: new Date(createdAt) }]
-
-        const thumbnail = await getImageThumbnail(img.id)
+    for (let partIndex = 0; partIndex < imageParts.length; partIndex++) {
+      const imageFiles: NonNullable<ExportData['imageFiles']> = {}
+      const thumbnailFiles: NonNullable<ExportData['thumbnailFiles']> = {}
+      const zipFiles: Record<string, Uint8Array | [Uint8Array, { mtime: Date; level?: 0 }]> = {}
+      for (const image of imageParts[partIndex]) {
+        const { ext, bytes } = dataUrlToBytes(image.dataUrl)
+        const path = `images/${image.id}.${ext}`
+        const createdAt = image.createdAt ?? exportedAt
+        imageFiles[image.id] = { path, createdAt, source: image.source, width: image.width, height: image.height }
+        zipFiles[path] = [bytes, { mtime: new Date(createdAt), level: 0 }]
+        const thumbnail = await getImageThumbnail(image.id)
         if (thumbnail?.thumbnailDataUrl) {
-          const { ext: thumbnailExt, bytes: thumbnailBytes } = dataUrlToBytes(thumbnail.thumbnailDataUrl)
-          const thumbnailPath = `thumbnails/${img.id}.${thumbnailExt}`
-          imageFiles[img.id].width = imageFiles[img.id].width ?? thumbnail.width
-          imageFiles[img.id].height = imageFiles[img.id].height ?? thumbnail.height
-          thumbnailFiles[img.id] = {
-            path: thumbnailPath,
-            width: thumbnail.width,
-            height: thumbnail.height,
-            thumbnailVersion: thumbnail.thumbnailVersion,
-          }
-          zipFiles[thumbnailPath] = [thumbnailBytes, { mtime: new Date(createdAt) }]
-          cacheThumbnail(img.id, {
-            dataUrl: thumbnail.thumbnailDataUrl,
-            width: thumbnail.width,
-            height: thumbnail.height,
-            thumbnailVersion: thumbnail.thumbnailVersion,
-          })
+          const thumbnailData = dataUrlToBytes(thumbnail.thumbnailDataUrl)
+          const thumbnailPath = `thumbnails/${image.id}.${thumbnailData.ext}`
+          thumbnailFiles[image.id] = { path: thumbnailPath, width: thumbnail.width, height: thumbnail.height, thumbnailVersion: thumbnail.thumbnailVersion }
+          zipFiles[thumbnailPath] = [thumbnailData.bytes, { mtime: new Date(createdAt), level: 0 }]
         }
       }
+
+      const isFirstPart = partIndex === 0
+      const manifest: ExportData = {
+        version: 3,
+        exportedAt: new Date(exportedAt).toISOString(),
+        backupPart: { id: backupId, index: partIndex + 1, total: imageParts.length },
+        ...(isFirstPart && options.exportConfig ? { settings } : {}),
+        ...(options.exportTasks ? {
+          ...(isFirstPart ? {
+            tasks,
+            favoriteCollections,
+            defaultFavoriteCollectionId,
+            agentConversations: getPersistableAgentConversations(agentConversations),
+          } : {}),
+          imageFiles,
+          thumbnailFiles,
+        } : {}),
+      }
+      zipFiles['manifest.json'] = [strToU8(JSON.stringify(manifest, null, 2)), { mtime: new Date(exportedAt) }]
+      const zipped = await runZip(zipFiles)
+      const partSuffix = imageParts.length > 1 ? `.part-${String(partIndex + 1).padStart(2, '0')}-of-${String(imageParts.length).padStart(2, '0')}` : ''
+      downloadExportBlob(createExportBlob(zipped), `${fileNameBase}${partSuffix}.zip`)
     }
-
-    const manifest: ExportData = {
-      version: 3,
-      exportedAt: new Date(exportedAt).toISOString(),
-    }
-
-    if (options.exportConfig) manifest.settings = settings
-    if (options.exportTasks) {
-      manifest.tasks = tasks
-      manifest.favoriteCollections = favoriteCollections
-      manifest.defaultFavoriteCollectionId = defaultFavoriteCollectionId
-      manifest.agentConversations = getPersistableAgentConversations(agentConversations)
-      manifest.imageFiles = imageFiles
-      manifest.thumbnailFiles = thumbnailFiles
-    }
-
-    zipFiles['manifest.json'] = [strToU8(JSON.stringify(manifest, null, 2)), { mtime: new Date(exportedAt) }]
-
-    const zipped = zipSync(zipFiles, { level: 6 })
-    const blob = new Blob([zipped.buffer as ArrayBuffer], { type: 'application/zip' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `operation-image-platform-backup_${formatExportFileTime(new Date(exportedAt))}.zip`
-    a.click()
-    URL.revokeObjectURL(url)
-    useStore.getState().showToast('数据已导出', 'success')
-  } catch (e) {
-    useStore
-      .getState()
-      .showToast(
-        `导出失败：${e instanceof Error ? e.message : String(e)}`,
-        'error',
-      )
+    useStore.getState().showToast(imageParts.length > 1 ? `数据已导出为 ${imageParts.length} 个分片` : '数据已导出', 'success')
+  } catch (error) {
+    console.error('导出数据失败', error)
+    useStore.getState().showToast(`导出失败：${error instanceof Error ? error.message : String(error)}`, 'error')
   }
 }
 
@@ -4839,113 +4855,110 @@ export interface ImportOptions {
   importTasks?: boolean
 }
 
-/** 导入 ZIP 数据 */
-export async function importData(file: File, options: ImportOptions = { importConfig: true, importTasks: true }): Promise<boolean> {
+/** 导入一个完整备份，分片文件可按任意顺序选择。 */
+export async function importData(files: File | File[], options: ImportOptions = { importConfig: true, importTasks: true }): Promise<boolean> {
   try {
-    const buffer = await file.arrayBuffer()
-    const unzipped = unzipSync(new Uint8Array(buffer))
+    const selectedFiles = Array.isArray(files) ? files : [files]
+    if (selectedFiles.length === 0) throw new Error('请选择备份 ZIP 文件')
+    const unpackedParts = await Promise.all(selectedFiles.map(async (file) => {
+      const unzipped = await runUnzip(new Uint8Array(await file.arrayBuffer()))
+      const manifestBytes = unzipped['manifest.json']
+      if (!manifestBytes) throw new Error(`${file.name} 中缺少 manifest.json`)
+      return { fileName: file.name, files: unzipped, manifest: JSON.parse(strFromU8(manifestBytes)) as ExportData }
+    }))
 
-    const manifestBytes = unzipped['manifest.json']
-    if (!manifestBytes) throw new Error('ZIP 中缺少 manifest.json')
+    const multipartParts = unpackedParts.filter((part) => part.manifest.backupPart)
+    if (multipartParts.length > 0) {
+      if (multipartParts.length !== unpackedParts.length) throw new Error('不能混合选择分片备份和普通备份')
+      const backupId = multipartParts[0].manifest.backupPart!.id
+      const totalParts = multipartParts[0].manifest.backupPart!.total
+      const partIndexes = new Set<number>()
+      for (const part of multipartParts) {
+        const metadata = part.manifest.backupPart!
+        if (metadata.id !== backupId || metadata.total !== totalParts) throw new Error('所选分片不属于同一批备份')
+        if (partIndexes.has(metadata.index)) throw new Error(`备份分片 ${metadata.index} 重复`)
+        partIndexes.add(metadata.index)
+      }
+      const missingIndexes = Array.from({ length: totalParts }, (_, index) => index + 1).filter((index) => !partIndexes.has(index))
+      if (missingIndexes.length > 0) throw new Error(`备份分片不完整，缺少：${missingIndexes.join('、')}`)
+      unpackedParts.sort((left, right) => left.manifest.backupPart!.index - right.manifest.backupPart!.index)
+    } else if (unpackedParts.length > 1) {
+      throw new Error('一次只能导入一个普通备份 ZIP')
+    }
 
-    const data: ExportData = JSON.parse(strFromU8(manifestBytes))
+    for (const part of unpackedParts) {
+      const referencedPaths = [
+        ...Object.values(part.manifest.imageFiles ?? {}).map((imageInfo) => imageInfo.path),
+        ...Object.values(part.manifest.thumbnailFiles ?? {}).map((thumbnailInfo) => thumbnailInfo.path),
+      ]
+      const missingPath = referencedPaths.find((path) => part.files[path] == null)
+      if (missingPath) throw new Error(`${part.fileName} 中缺少 ${missingPath}`)
+    }
+
+    const primaryManifest = unpackedParts.find((part) => part.manifest.tasks || part.manifest.settings)?.manifest ?? unpackedParts[0].manifest
+    const stateBeforeImport = useStore.getState()
+    if (options.importTasks && hasActiveDataOperations(stateBeforeImport.tasks, stateBeforeImport.agentConversations)) {
+      throw new Error('当前有任务正在进行，请完成或停止后再导入')
+    }
 
     const importedImageIds: string[] = []
-    if (options.importTasks && data.tasks && data.imageFiles) {
-      // 还原图片
-      for (const [id, info] of Object.entries(data.imageFiles)) {
-        const bytes = unzipped[info.path]
-        if (!bytes) continue
-        const dataUrl = bytesToDataUrl(bytes, info.path)
-        await putImage({
-          id,
-          dataUrl,
-          createdAt: info.createdAt,
-          source: info.source,
-          width: info.width,
-          height: info.height,
-        })
-        cacheImage(id, dataUrl)
-        importedImageIds.push(id)
-      }
-
-      for (const [id, info] of Object.entries(data.thumbnailFiles ?? {})) {
-        const bytes = unzipped[info.path]
-        if (!bytes) continue
-        const thumbnailDataUrl = bytesToDataUrl(bytes, info.path)
-        await putImageThumbnail({
-          id,
-          thumbnailDataUrl,
-          width: info.width,
-          height: info.height,
-          thumbnailVersion: info.thumbnailVersion,
-        })
-        cacheThumbnail(id, {
-          dataUrl: thumbnailDataUrl,
-          width: info.width,
-          height: info.height,
-          thumbnailVersion: info.thumbnailVersion,
-        })
-      }
-
-      for (const task of data.tasks) {
-        await putTask(task)
-      }
-
-      const tasks = await getAllTasks()
-      const state = useStore.getState()
-      const importedCollections = normalizeFavoriteCollections(data.favoriteCollections)
-      const favoriteCollections = importedCollections.length
-        ? ensureDefaultFavoriteCollection(normalizeFavoriteCollections([...state.favoriteCollections, ...importedCollections]))
-        : state.favoriteCollections
-      const defaultFavoriteCollectionId = importedCollections.length
-        ? resolveDefaultFavoriteCollectionId(favoriteCollections, data.defaultFavoriteCollectionId)
-        : state.defaultFavoriteCollectionId
-      const normalizedFavorites = normalizeLoadedFavoriteState(tasks, favoriteCollections, defaultFavoriteCollectionId)
-      useStore.setState({
-        tasks: normalizedFavorites.tasks,
-        favoriteCollections: normalizedFavorites.collections,
-        defaultFavoriteCollectionId: normalizedFavorites.defaultFavoriteCollectionId,
-      })
-      if (normalizedFavorites.changed) await Promise.all(normalizedFavorites.tasks.map((task) => putTask(task)))
-      const importedAgentConversations = normalizeAgentConversations(data.agentConversations)
-        .filter((conversation) => !isEmptyAgentConversation(conversation))
-      useStore.setState((state) => {
-        const agentConversations = mergeImportedAgentConversations(state.agentConversations, importedAgentConversations)
-        const activeAgentConversationId = state.activeAgentConversationId && agentConversations.some((conversation) => conversation.id === state.activeAgentConversationId)
-          ? state.activeAgentConversationId
-          : importedAgentConversations[0]?.id ?? agentConversations[0]?.id ?? null
-        return {
-          agentConversations,
-          activeAgentConversationId,
+    if (options.importTasks) {
+      for (const part of unpackedParts) {
+        for (const [imageId, imageInfo] of Object.entries(part.manifest.imageFiles ?? {})) {
+          const imageBytes = part.files[imageInfo.path]
+          if (!imageBytes) throw new Error(`${part.fileName} 中缺少 ${imageInfo.path}`)
+          const dataUrl = bytesToDataUrl(imageBytes, imageInfo.path)
+          await putImage({ id: imageId, dataUrl, createdAt: imageInfo.createdAt, source: imageInfo.source, width: imageInfo.width, height: imageInfo.height })
+          cacheImage(imageId, dataUrl)
+          importedImageIds.push(imageId)
         }
+        for (const [imageId, thumbnailInfo] of Object.entries(part.manifest.thumbnailFiles ?? {})) {
+          const thumbnailBytes = part.files[thumbnailInfo.path]
+          if (!thumbnailBytes) throw new Error(`${part.fileName} 中缺少 ${thumbnailInfo.path}`)
+          const thumbnailDataUrl = bytesToDataUrl(thumbnailBytes, thumbnailInfo.path)
+          await putImageThumbnail({ id: imageId, thumbnailDataUrl, width: thumbnailInfo.width, height: thumbnailInfo.height, thumbnailVersion: thumbnailInfo.thumbnailVersion })
+          cacheThumbnail(imageId, { dataUrl: thumbnailDataUrl, width: thumbnailInfo.width, height: thumbnailInfo.height, thumbnailVersion: thumbnailInfo.thumbnailVersion })
+        }
+      }
+
+      for (const task of primaryManifest.tasks ?? []) await putTask(task)
+      const tasks = await getAllTasks()
+      const currentState = useStore.getState()
+      const importedCollections = normalizeFavoriteCollections(primaryManifest.favoriteCollections)
+      const favoriteCollections = importedCollections.length
+        ? ensureDefaultFavoriteCollection(normalizeFavoriteCollections([...currentState.favoriteCollections, ...importedCollections]))
+        : currentState.favoriteCollections
+      const defaultFavoriteCollectionId = importedCollections.length
+        ? resolveDefaultFavoriteCollectionId(favoriteCollections, primaryManifest.defaultFavoriteCollectionId)
+        : currentState.defaultFavoriteCollectionId
+      const normalizedFavorites = normalizeLoadedFavoriteState(tasks, favoriteCollections, defaultFavoriteCollectionId)
+      useStore.setState({ tasks: normalizedFavorites.tasks, favoriteCollections: normalizedFavorites.collections, defaultFavoriteCollectionId: normalizedFavorites.defaultFavoriteCollectionId })
+      if (normalizedFavorites.changed) await Promise.all(normalizedFavorites.tasks.map((task) => putTask(task)))
+
+      const importedAgentConversations = normalizeAgentConversations(primaryManifest.agentConversations).filter((conversation) => !isEmptyAgentConversation(conversation))
+      useStore.setState((currentState) => {
+        const agentConversations = mergeImportedAgentConversations(currentState.agentConversations, importedAgentConversations)
+        const activeAgentConversationId = currentState.activeAgentConversationId && agentConversations.some((conversation) => conversation.id === currentState.activeAgentConversationId)
+          ? currentState.activeAgentConversationId
+          : importedAgentConversations[0]?.id ?? agentConversations[0]?.id ?? null
+        return { agentConversations, activeAgentConversationId }
       })
       await replaceStoredAgentConversations(useStore.getState().agentConversations)
       skipSupportPromptForImportedData(tasks)
       scheduleThumbnailBackfill(importedImageIds)
     }
 
-    if (options.importConfig && data.settings) {
-      const state = useStore.getState()
-      state.setSettings(mergeImportedSettings(state.settings, data.settings))
+    if (options.importConfig && primaryManifest.settings) {
+      const currentState = useStore.getState()
+      currentState.setSettings(mergeImportedSettings(currentState.settings, primaryManifest.settings))
     }
 
-    let msg = '数据已成功导入'
-    if (options.importTasks && data.tasks) {
-      msg = `已导入 ${data.tasks.length} 个任务`
-    } else if (options.importConfig && data.settings) {
-      msg = '配置已成功导入'
-    }
-
-    useStore.getState().showToast(msg, 'success')
+    const importedTaskCount = primaryManifest.tasks?.length ?? 0
+    useStore.getState().showToast(options.importTasks && importedTaskCount > 0 ? `已导入 ${importedTaskCount} 个任务` : '数据已成功导入', 'success')
     return true
-  } catch (e) {
-    useStore
-      .getState()
-      .showToast(
-        `导入失败：${e instanceof Error ? e.message : String(e)}`,
-        'error',
-      )
+  } catch (error) {
+    console.error('导入数据失败', error)
+    useStore.getState().showToast(`导入失败：${error instanceof Error ? error.message : String(error)}`, 'error')
     return false
   }
 }
