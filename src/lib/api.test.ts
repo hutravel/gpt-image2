@@ -10,7 +10,7 @@ describe('callImageApi', () => {
     vi.useRealTimers()
   })
 
-  it('requests URL image responses by default on Images API', async () => {
+  it('requests Base64 image responses by default on Images API', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       data: [{ b64_json: 'aW1hZ2U=' }],
     }), {
@@ -27,10 +27,10 @@ describe('callImageApi', () => {
 
     const [, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
-    expect(body.response_format).toBe('url')
+    expect(body.response_format).toBe('b64_json')
   })
 
-  it('requests Base64 instead of URL when Base64 responses are enabled', async () => {
+  it('requests URL image responses when URL responses are enabled', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       data: [{ b64_json: 'aW1hZ2U=' }],
     }), {
@@ -43,7 +43,7 @@ describe('callImageApi', () => {
       settings: {
         ...DEFAULT_SETTINGS,
         apiKey: 'test-key',
-        profiles: [{ ...activeProfile, apiKey: 'test-key', responseFormatB64Json: true, responseFormatUrl: false }],
+        profiles: [{ ...activeProfile, apiKey: 'test-key', responseFormatB64Json: undefined, responseFormatUrl: true }],
       },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
@@ -52,7 +52,7 @@ describe('callImageApi', () => {
 
     const [, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
-    expect(body.response_format).toBe('b64_json')
+    expect(body.response_format).toBe('url')
   })
 
   it.each([false, true])(

@@ -1900,7 +1900,7 @@ export default function SettingsModal() {
                       </button>
                     </div>
                     <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
-                      默认关闭。开启后请求接口直接返回 b64_json 图片数据，可避开图片 URL 访问限制，但响应体会更大。
+                      默认开启。请求接口直接返回 b64_json 图片数据，可避开图片 URL 访问限制，但响应体会更大。
                     </div>
                   </div>
                   <div>

@@ -308,7 +308,8 @@ export function createDefaultOpenAIProfile(overrides: Partial<ApiProfile> = {}):
     apiMode: 'images',
     codexCli: false,
     apiProxy: DEFAULT_OPENAI_API_PROXY,
-    responseFormatUrl: true,
+    responseFormatB64Json: true,
+    responseFormatUrl: false,
     streamImages: false,
     streamPartialImages: DEFAULT_STREAM_PARTIAL_IMAGES,
     ...overrides,
@@ -487,7 +488,8 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     apiMode: 'images',
     codexCli: Boolean(record.codexCli),
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : DEFAULT_OPENAI_API_PROXY,
-    responseFormatB64Json: record.responseFormatB64Json === true ? true : undefined,
+    responseFormatB64Json: record.responseFormatUrl === true ? undefined : true,
+    responseFormatUrl: record.responseFormatUrl === true,
     streamImages: typeof record.streamImages === 'boolean' ? record.streamImages : false,
     streamPartialImages: normalizeStreamPartialImages(record.streamPartialImages),
   })
@@ -640,8 +642,8 @@ function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
     profile.apiMode === 'images' &&
     profile.codexCli === false &&
     profile.apiProxy === DEFAULT_OPENAI_API_PROXY &&
-    profile.responseFormatB64Json === undefined &&
-    profile.responseFormatUrl === true &&
+    profile.responseFormatB64Json === true &&
+    profile.responseFormatUrl === false &&
     profile.streamImages === false &&
     profile.streamPartialImages === DEFAULT_STREAM_PARTIAL_IMAGES
 }
