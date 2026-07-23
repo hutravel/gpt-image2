@@ -569,6 +569,8 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       }
       if (profile.responseFormatB64Json) {
         formData.append('response_format', 'b64_json')
+      } else if (profile.responseFormatUrl !== false) {
+        formData.append('response_format', 'url')
       }
       if (profile.streamImages) {
         formData.append('stream', 'true')
@@ -631,6 +633,8 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       }
       if (profile.responseFormatB64Json) {
         body.response_format = 'b64_json'
+      } else if (profile.responseFormatUrl !== false) {
+        body.response_format = 'url'
       }
       if (profile.streamImages) {
         body.stream = true
@@ -831,6 +835,8 @@ async function submitCustomRequest(mapping: CustomProviderSubmitMapping, opts: C
       const formData = await createCustomMultipartBody(mapping, opts, context)
       if (profile.responseFormatB64Json) {
         formData.append('response_format', 'b64_json')
+      } else if (profile.responseFormatUrl !== false) {
+        formData.append('response_format', 'url')
       }
       body = formData
     } else {
@@ -842,6 +848,8 @@ async function submitCustomRequest(mapping: CustomProviderSubmitMapping, opts: C
       const resolved = resolveTemplateValue(mapping.body ?? {}, context)
       if (profile.responseFormatB64Json && resolved && typeof resolved === 'object' && !Array.isArray(resolved)) {
         (resolved as Record<string, unknown>).response_format = 'b64_json'
+      } else if (profile.responseFormatUrl !== false && resolved && typeof resolved === 'object' && !Array.isArray(resolved)) {
+        (resolved as Record<string, unknown>).response_format = 'url'
       }
       body = JSON.stringify(resolved)
     }

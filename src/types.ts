@@ -78,9 +78,10 @@ export interface ApiProfile {
   codexCli: boolean
   apiProxy: boolean
   responseFormatB64Json?: boolean
+  responseFormatUrl?: boolean
   streamImages?: boolean
   streamPartialImages?: number
-  providerDrafts?: Partial<Record<ApiProvider, Partial<Pick<ApiProfile, 'baseUrl' | 'model' | 'apiMode' | 'codexCli' | 'apiProxy' | 'responseFormatB64Json' | 'streamImages' | 'streamPartialImages'>>>>
+  providerDrafts?: Partial<Record<ApiProvider, Partial<Pick<ApiProfile, 'baseUrl' | 'model' | 'apiMode' | 'codexCli' | 'apiProxy' | 'responseFormatB64Json' | 'responseFormatUrl' | 'streamImages' | 'streamPartialImages'>>>>
 }
 
 export interface AppSettings {

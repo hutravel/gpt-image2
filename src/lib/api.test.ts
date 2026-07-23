@@ -10,6 +10,51 @@ describe('callImageApi', () => {
     vi.useRealTimers()
   })
 
+  it('requests URL image responses by default on Images API', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await callImageApi({
+      settings: { ...DEFAULT_SETTINGS, apiKey: 'test-key' },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    const body = JSON.parse(String((init as RequestInit).body))
+    expect(body.response_format).toBe('url')
+  })
+
+  it('requests Base64 instead of URL when Base64 responses are enabled', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    const activeProfile = DEFAULT_SETTINGS.profiles[0]
+    await callImageApi({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        apiKey: 'test-key',
+        profiles: [{ ...activeProfile, apiKey: 'test-key', responseFormatB64Json: true, responseFormatUrl: false }],
+      },
+      prompt: 'prompt',
+      params: { ...DEFAULT_PARAMS },
+      inputImageDataUrls: [],
+    })
+
+    const [, init] = fetchMock.mock.calls[0]
+    const body = JSON.parse(String((init as RequestInit).body))
+    expect(body.response_format).toBe('b64_json')
+  })
+
   it.each([false, true])(
     'adds the prompt rewrite guard on Responses API when Codex CLI mode is %s',
     async (codexCli) => {

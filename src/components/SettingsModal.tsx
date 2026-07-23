@@ -272,6 +272,8 @@ function isPristineNewOpenAIProfile(profile: ApiProfile) {
     profile.apiMode === 'images' &&
     profile.codexCli === false &&
     profile.apiProxy === defaultProfile.apiProxy &&
+    profile.responseFormatB64Json === defaultProfile.responseFormatB64Json &&
+    profile.responseFormatUrl === defaultProfile.responseFormatUrl &&
     profile.streamImages === defaultProfile.streamImages &&
     profile.streamPartialImages === defaultProfile.streamPartialImages
 }
@@ -651,6 +653,7 @@ export default function SettingsModal() {
         apiProxy: nextApiProxy,
         codexCli: isOpenAIProvider && profile.codexCli === true,
         responseFormatB64Json: isOpenAIProvider && profile.responseFormatB64Json === true ? true : undefined,
+        responseFormatUrl: isOpenAIProvider && profile.responseFormatB64Json !== true && profile.responseFormatUrl !== false,
         streamImages: isOpenAIProvider && profile.streamImages === true,
         streamPartialImages: normalizeStreamPartialImages(profile.streamPartialImages),
       }
@@ -1887,7 +1890,7 @@ export default function SettingsModal() {
                       <span className="block text-sm text-gray-600 dark:text-gray-300">返回 Base64</span>
                       <button
                         type="button"
-                        onClick={() => updateActiveProfile({ responseFormatB64Json: activeProfile.responseFormatB64Json ? undefined : true }, true)}
+                        onClick={() => updateActiveProfile({ responseFormatB64Json: activeProfile.responseFormatB64Json ? undefined : true, responseFormatUrl: activeProfile.responseFormatB64Json ? true : false }, true)}
                         className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${activeProfile.responseFormatB64Json ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
                         role="switch"
                         aria-checked={!!activeProfile.responseFormatB64Json}
@@ -1898,6 +1901,24 @@ export default function SettingsModal() {
                     </div>
                     <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
                       默认关闭。开启后请求接口直接返回 b64_json 图片数据，可避开图片 URL 访问限制，但响应体会更大。
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1.5 flex items-center justify-between gap-3">
+                      <span className="block text-sm text-gray-600 dark:text-gray-300">返回 URL</span>
+                      <button
+                        type="button"
+                        onClick={() => updateActiveProfile({ responseFormatUrl: activeProfile.responseFormatUrl !== true, responseFormatB64Json: undefined }, true)}
+                        className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${activeProfile.responseFormatUrl !== false && !activeProfile.responseFormatB64Json ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                        role="switch"
+                        aria-checked={activeProfile.responseFormatUrl !== false && !activeProfile.responseFormatB64Json}
+                        aria-label="返回 URL"
+                      >
+                        <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${activeProfile.responseFormatUrl !== false && !activeProfile.responseFormatB64Json ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
+                      </button>
+                    </div>
+                    <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
+                      默认开启。请求接口直接返回图片 URL，开启时会自动关闭 Base64。
                     </div>
                   </div>
                   <div>
