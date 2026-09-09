@@ -450,7 +450,7 @@ export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfil
     provider,
     baseUrl: provider === 'fal' ? rawBaseUrl.trim().replace(/\/+$/, '') || DEFAULT_FAL_BASE_URL : rawBaseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : defaults.apiKey,
-    model: DEFAULT_IMAGES_MODEL,
+    model: typeof record.model === 'string' && record.model.trim() ? record.model.trim() : defaults.model,
     timeout: normalizeApiTimeout(record.timeout, defaults.timeout),
     apiMode,
     codexCli: Boolean(record.codexCli),
@@ -483,7 +483,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
   const legacyProfile = createDefaultOpenAIProfile({
     baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl : DEFAULT_BASE_URL,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : '',
-    model: DEFAULT_IMAGES_MODEL,
+    model: typeof record.model === 'string' && record.model.trim() ? record.model.trim() : DEFAULT_IMAGES_MODEL,
     timeout: normalizeApiTimeout(record.timeout),
     apiMode: 'images',
     codexCli: Boolean(record.codexCli),
