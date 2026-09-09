@@ -421,6 +421,8 @@ export default function SettingsModal() {
   const [showEndpointSettings, setShowEndpointSettings] = useState(false)
   const [endpointSettingsSelection, setEndpointSettingsSelection] = useState<'images' | 'custom'>('images')
   const [customEndpointPathInput, setCustomEndpointPathInput] = useState('tasks')
+  const [showModelSettings, setShowModelSettings] = useState(false)
+  const [customModelInput, setCustomModelInput] = useState('')
   const [showZipDownloadRouteManager, setShowZipDownloadRouteManager] = useState(false)
   const [editingCustomProviderId, setEditingCustomProviderId] = useState<string | null>(null)
   const [customProviderForm, setCustomProviderForm] = useState<CustomProviderForm>(createDefaultCustomProviderForm())
@@ -794,6 +796,10 @@ export default function SettingsModal() {
   }
 
   const handleClose = () => {
+    if (showModelSettings) {
+      setShowModelSettings(false)
+      return
+    }
     if (showEndpointSettings) {
       setShowEndpointSettings(false)
       return
@@ -1144,6 +1150,20 @@ export default function SettingsModal() {
     setEndpointSettingsSelection(activeEndpoint)
     setCustomEndpointPathInput(savedEndpointPath || 'tasks')
     setShowEndpointSettings(true)
+  }
+
+  const openModelSettings = () => {
+    setCustomModelInput(activeProfile.model || '')
+    setShowModelSettings(true)
+  }
+
+  const applyCustomModel = () => {
+    const trimmed = customModelInput.trim()
+    const fallbackModel = activeProfile.provider === 'fal' ? DEFAULT_FAL_MODEL : getDefaultModelForMode(activeProfile.apiMode)
+    const nextModel = trimmed || fallbackModel
+    updateActiveProfile({ model: nextModel }, true)
+    setShowModelSettings(false)
+    showToast('模型 ID 已更新', 'success')
   }
 
   const selectImagesEndpoint = () => {
@@ -1860,8 +1880,17 @@ export default function SettingsModal() {
                   </div>
                 </div>
                 <div className="rounded-xl border border-gray-200/70 bg-gray-50/70 px-3 py-2.5 dark:border-white/[0.08] dark:bg-white/[0.03]">
-                  <div className="text-xs text-gray-500 dark:text-gray-500">模型 ID</div>
-                  <div className="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">{activeProfile.model || DEFAULT_IMAGES_MODEL}</div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs text-gray-500 dark:text-gray-500">模型 ID</div>
+                    <button
+                      type="button"
+                      onClick={openModelSettings}
+                      className="min-h-8 shrink-0 cursor-pointer rounded-lg border border-gray-200/80 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm transition-colors hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-gray-300 dark:hover:bg-white/[0.08] dark:hover:text-white"
+                    >
+                      设置
+                    </button>
+                  </div>
+                  <div className="mt-1 break-all text-sm font-medium text-gray-800 dark:text-gray-100">{activeProfile.model || DEFAULT_IMAGES_MODEL}</div>
                 </div>
               </div>
 
@@ -2184,6 +2213,68 @@ export default function SettingsModal() {
                   应用自定义端点
                 </button>
               )}
+            </div>
+          </div>,
+          document.body,
+        )}
+
+        {showModelSettings && createPortal(
+          <div
+            data-no-drag-select
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4"
+            onClick={() => setShowModelSettings(false)}
+          >
+            <div className="absolute inset-0 bg-black/20 backdrop-blur-md animate-overlay-in dark:bg-black/40" />
+            <div
+              className="relative z-10 w-full max-w-sm rounded-3xl border border-white/50 bg-white/95 p-6 shadow-2xl ring-1 ring-black/5 animate-confirm-in dark:border-white/[0.08] dark:bg-gray-900/95 dark:ring-white/10"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mb-5 flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-bold text-gray-800 dark:text-gray-100">设置模型 ID</h3>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">填写当前配置使用的模型 ID，留空使用默认值。</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowModelSettings(false)}
+                  className="min-h-11 min-w-11 shrink-0 rounded-full p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:hover:bg-white/[0.06] dark:hover:text-gray-200"
+                  aria-label="关闭模型设置"
+                >
+                  <CloseIcon className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block" onClick={(event) => event.stopPropagation()}>
+                  <span className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-300">模型 ID</span>
+                  <div className="flex items-center rounded-xl border border-blue-300/70 bg-white px-3 shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-blue-400/30 dark:bg-gray-900/70">
+                    <input
+                      value={customModelInput}
+                      onChange={(event) => setCustomModelInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          applyCustomModel()
+                        }
+                      }}
+                      placeholder={activeProfile.provider === 'fal' ? DEFAULT_FAL_MODEL : getDefaultModelForMode(activeProfile.apiMode)}
+                      autoFocus
+                      className="min-w-0 flex-1 bg-transparent py-2.5 text-sm text-gray-800 outline-none placeholder:text-gray-400 dark:text-gray-100"
+                    />
+                  </div>
+                  <div data-selectable-text className="mt-1.5 text-xs leading-relaxed text-gray-500 dark:text-gray-500">
+                    发送请求时使用的模型标识。留空将使用对应模式的默认模型。
+                  </div>
+                </label>
+              </div>
+
+              <button
+                type="button"
+                onClick={applyCustomModel}
+                className="mt-4 min-h-11 w-full cursor-pointer rounded-xl bg-blue-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+              >
+                应用模型 ID
+              </button>
             </div>
           </div>,
           document.body,

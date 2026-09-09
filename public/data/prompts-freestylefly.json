@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/freestylefly/awesome-gpt-image-2",
-  "totalCases": 517,
+  "totalCases": 541,
   "categories": [
     "Architecture & Spaces",
     "Brand & Logos",
@@ -50,6 +50,549 @@
     "Travel"
   ],
   "cases": [
+    {
+      "id": 544,
+      "title": "幼儿词汇拆解学习卡",
+      "image": "/images/case544.jpg",
+      "imageAlt": "幼儿词汇拆解学习卡",
+      "sourceLabel": "@Naiknelofar788",
+      "sourceUrl": "https://x.com/Naiknelofar788/status/2092993830220120231",
+      "prompt": "Create a clean, child-friendly educational vocabulary poster for preschool/kindergarten children, inspired by a simple visual learning card.\n\nFeature [FRUIT] as the main large realistic object on the left, and show a [PART / SLICE / SEGMENT] of the same fruit on the right. Connect the two with a playful dotted curved arrow and a tiny simple stick-figure child pointing toward the smaller part.\n\nAdd the word “[FRUIT NAME]” in large bold uppercase letters at the top and “[PART NAME]” in large bold uppercase letters underneath the smaller image. Use a soft white and very light pastel-blue background, rounded image panels, clean spacing, realistic fruit photography, simple blue typography, and minimal playful illustrations.\n\nThe overall design should feel bright, educational, modern, uncluttered, and easy for young children to understand, like a premium preschool vocabulary learning card. Vertical 4:5 composition, high resolution, soft lighting, clear labels, no unnecessary decorations.",
+      "promptPreview": "Create a clean, child-friendly educational vocabulary poster for preschool/kindergarten children, inspired by a simple visual learning card. Feature [FRUIT] as the main large realistic object on the left, and show a [PAR",
+      "category": "Charts & Infographics",
+      "styles": [
+        "UI",
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Education"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-544"
+    },
+    {
+      "id": 543,
+      "title": "旅行纪念珐琅徽章",
+      "image": "/images/case543.jpg",
+      "imageAlt": "旅行纪念珐琅徽章",
+      "sourceLabel": "@Emmma__0",
+      "sourceUrl": "https://x.com/Emmma__0/status/2093194689222705645",
+      "prompt": "Turn the reference photo into a travel souvenir enamel pin badge. Compose it as a SCENE, not a single isolated object.\n\nSubject hierarchy: the defining landscape, terrain or landmark of the photo forms the main body of the badge and occupies most of its area. If a person appears prominently in the photo, keep them in the badge as a small, simplified figure at true relative scale within that landscape — the person is an accent, the landscape is the subject. Preserve the original spatial relationship and scale between the figure and the surroundings.\n\nHow to render the person: flat enamel color blocks matching their real clothing and hair color from the photo. The face is a smooth plain area of light skin-tone enamel with no drawn facial features — do NOT render the person as a dark or black silhouette, and do NOT black out the face or head. Skin reads as a warm light enamel color, clearly lighter than the clothing.\n\nStyling: thin polished gold outline around the silhouette and along every internal divider, glossy enamel color fill, gentle even lighting with only a soft sheen on the gold lines, very subtle drop shadow. Outer contour follows the scene's own shape, not a plain rectangle.\n\nBackground: flat dark navy coarse linen texture. Badge centered, filling about 60% of the frame.\n\nAvoid: black silhouette figure, blacked-out face, dark featureless head, portrait close-up, detailed facial features, person dominating the badge, cropping out the landscape, three-quarter angle, macro product photography, heavy specular glare, cartoon, realistic scene, text, watermark.",
+      "promptPreview": "Turn the reference photo into a travel souvenir enamel pin badge. Compose it as a SCENE, not a single isolated object. Subject hierarchy: the defining landscape, terrain or landmark of the photo forms the main body of th",
+      "category": "Products & E-commerce",
+      "styles": [
+        "Realistic",
+        "Product",
+        "Character"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-543"
+    },
+    {
+      "id": 542,
+      "title": "黑白排版侧脸肖像海报",
+      "image": "/images/case542.jpg",
+      "imageAlt": "黑白排版侧脸肖像海报",
+      "sourceLabel": "@HustleXR",
+      "sourceUrl": "https://x.com/HustleXR/status/2093206386012230000",
+      "prompt": "High-contrast black and white typographic portrait poster of [HUMAN], shown in side profile with [FEATURE]. Build the portrait with bold black silhouette blocks, sharp negative space, rough ink edges, fragmented stencil shapes, tiny editorial microtext, vertical typographic accents and expressive hand-drawn calligraphic marks. Integrate one large readable text block saying “[TEXT]” in 2 to 4 stacked lines, placed only inside the neck and body area, using oversized scribbled lettering that feels fused into the silhouette. Include a graphic design logo reading “[LOGO]” near the footer. Minimal off-white paper background, asymmetrical layout, cropped vertical composition, experimental editorial poster design, raw ink print texture, aspect ratio 4:5.",
+      "promptPreview": "High-contrast black and white typographic portrait poster of [HUMAN], shown in side profile with [FEATURE]. Build the portrait with bold black silhouette blocks, sharp negative space, rough ink edges, fragmented stencil ",
+      "category": "Posters & Typography",
+      "styles": [
+        "UI",
+        "Poster",
+        "Brand"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-542"
+    },
+    {
+      "id": 541,
+      "title": "50/50 混合媒介回忆卡",
+      "image": "/images/case541.jpg",
+      "imageAlt": "50/50 混合媒介回忆卡",
+      "sourceLabel": "@Sairah_0",
+      "sourceUrl": "https://x.com/Sairah_0/status/2093212900160868430",
+      "prompt": "Transform the uploaded photo into a vertical mixed-media memory card with a strict 50/50 split.\n\nKeep the original photo unchanged in the top half. In the bottom half, use textured off-white handmade paper and add a muted, irregular color patch matching the photo’s tones.\n\nRedraw the main subjects as a simple dark wax-crayon sketch with loose, imperfect lines and minimal details. Add a short handwritten English phrase and subtle Risograph grain.\n\nCreate a quiet, nostalgic Morandi-style aesthetic with generous negative space. Do not add extra elements or copy the reference composition exactly.",
+      "promptPreview": "Transform the uploaded photo into a vertical mixed-media memory card with a strict 50/50 split. Keep the original photo unchanged in the top half. In the bottom half, use textured off-white handmade paper and add a muted",
+      "category": "Documents & Publishing",
+      "styles": [
+        "UI",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-541"
+    },
+    {
+      "id": 540,
+      "title": "梦幻未来城市编辑艺术海报",
+      "image": "/images/case540.jpg",
+      "imageAlt": "梦幻未来城市编辑艺术海报",
+      "sourceLabel": "@Naiknelofar788",
+      "sourceUrl": "https://x.com/Naiknelofar788/status/2093230701986672924",
+      "prompt": "Create a visually unforgettable editorial art poster of a dreamlike futuristic world where familiar everyday life meets surreal architecture. Grand sculptural buildings, winding roads, oversized plants, tiny people, unexpected floating elements, dramatic perspective, cinematic atmosphere, and one iconic focal point. Blend vintage travel-poster design with modern luxury editorial aesthetics, sophisticated muted colors, soft natural light, subtle film grain, tactile paper texture, clean geometric shapes, minimal composition, nostalgic yet futuristic, whimsical but premium, highly detailed, instantly recognizable silhouette, Pinterest-worthy, Instagram-viral aesthetic, collectible art print, no clutter, no photorealism, vertical 4:5.",
+      "promptPreview": "Create a visually unforgettable editorial art poster of a dreamlike futuristic world where familiar everyday life meets surreal architecture. Grand sculptural buildings, winding roads, oversized plants, tiny people, unex",
+      "category": "Illustration & Art",
+      "styles": [
+        "UI",
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Travel"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-540"
+    },
+    {
+      "id": 539,
+      "title": "粗粝手绘搭档肖像海报",
+      "image": "/images/case539.jpg",
+      "imageAlt": "粗粝手绘搭档肖像海报",
+      "sourceLabel": "@kingofdairyque",
+      "sourceUrl": "https://x.com/kingofdairyque/status/2093279729717780736",
+      "prompt": "Raw sketchy graphic portrait poster of [HUMAN] wearing [CLOTHING], half-body and large in frame, accompanied closely by [ANIMAL], with a minimal [SCENERY] background. Render in a rough expressive illustrated style with broken black ink contours, loose sketch lines, scratchy hatching, irregular stroke weight, imperfect line edges, fast gestural mark-making, simplified anatomy, flat cel-like shadow blocks, and reduced detail. Use a restrained [COLORS] palette with one dominant warm field, one cool counter-field, dark inked shadows, and a few pale highlight accents. Keep the face oversized and central, crop around mid-torso, and place the animal in the lower foreground or tucked beside the subject, drawn with the same simplified raw linework. Reduce the scenery into only 2 or 3 bold silhouette shapes behind the subject, with no detailed environment rendering. Add a narrow warm off-white poster border and very light print texture. Strong attitude, graphic poster energy, intentionally imperfect strokes, raw and sketchy finish, ar 4:5",
+      "promptPreview": "Raw sketchy graphic portrait poster of [HUMAN] wearing [CLOTHING], half-body and large in frame, accompanied closely by [ANIMAL], with a minimal [SCENERY] background. Render in a rough expressive illustrated style with b",
+      "category": "Posters & Typography",
+      "styles": [
+        "Poster",
+        "3D"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-539"
+    },
+    {
+      "id": 538,
+      "title": "橡皮章旅行田野笔记海报",
+      "image": "/images/case538.jpg",
+      "imageAlt": "橡皮章旅行田野笔记海报",
+      "sourceLabel": "@MahnoorAi12",
+      "sourceUrl": "https://x.com/MahnoorAi12/status/2092221482139349307",
+      "prompt": "Rubber Stamp Travel Field Notes Poster — Natural Realism Version\n\nCreate a separate “Rubber Stamp Travel Field Notes Poster” for each photo I upload. Output each photo individually. Never create a collage or combine multiple photos.\n\nUse a 4:3 landscape composition with a natural visual transition between the original photograph on the left and the aged-paper field-note area on the right. Do not add an obvious dividing line.\n\nLEFT — ORIGINAL PHOTOGRAPH\n\nThe left side should occupy roughly 58% of the frame.\n\nKeep the uploaded photograph visually authentic and recognizable. Preserve the original subject, perspective, terrain, architecture, plants, people, spatial relationships, natural light, shadows, textures, and overall atmosphere.\n\nDo not redesign or reinterpret the photograph.\n\nOnly apply a very subtle editorial photo treatment: gentle tonal balancing, restrained color grading, slightly softened highlights, and extremely fine natural film grain. It should still look like a real photograph taken on location rather than an AI-generated image.\n\nNatural cropping is allowed if needed to fit the 4:3 layout, but do not stretch, distort, move, replace, or redraw the main subject.\n\nAvoid excessive sharpness, HDR effects, artificial clarity, cinematic color grading, or overly perfect details.\n\nRIGHT — AGED PAPER FIELD NOTES\n\nThe right side should occupy roughly 42% of the frame.\n\nUse warm off-white, slightly aged paper with a believable physical texture. Include very subtle paper fibers, fine grain, faint handling marks, and a matte surface.\n\nKeep large areas completely unprinted.\n\nThe paper should feel like a real sheet from an architect's travel notebook or field journal, not a designed poster background.\n\nAvoid overly strong stains, decorative textures, vintage filters, or artificial grunge.\n\nSMALL RUBBER STAMP\n\nStudy the uploaded photograph and identify only the few visual features that make the location immediately recognizable.\n\nReduce them into a compact, imperfect multi-color rubber stamp impression.\n\nDo not reproduce the photograph element by element.\n\nSimplify aggressively and retain only the most meaningful visual relationships:\n\n- distinctive architecture and silhouette\n- important roof, tower, dome, arch, or structural shape\n- mountain or terrain contours\n- shoreline or road direction\n- a few recognizable trees or vegetation forms\n- simplified settlement layers\n- one or two important foreground shapes when visually relevant\n\nRemove crowds, cars, dense windows, repetitive buildings, tiny vegetation, decorative objects, and insignificant background details.\n\nThe result should look like something a traveler could have actually carved into a small rubber stamp, not a miniature illustration of the entire photograph.\n\nPlace the stamp in the lower-middle portion of the right paper area, occupying approximately 30–38% of the right section's height.\n\nKeep generous blank paper around it.\n\nDo not enlarge it into a large illustration.\n\nSTAMP COLOR & PRINT CHARACTER\n\nExtract approximately 2–4 muted spot colors naturally from the original photograph.\n\nPossible colors include:\n\n- carbon black\n- deep green\n- brick or muted red\n- ochre\n- slate blue\n- taupe or earthy brown\n\nDo not force these colors if the photograph suggests a different restrained palette.\n\nEach color should appear as a separate physical ink layer.\n\nMake the print feel genuinely handmade:\n\n- slightly uneven pressure\n- tiny gaps in the ink\n- dry areas\n- paper showing through\n- rough carved edges\n- irregular line thickness\n- small contour breaks\n- granular ink texture\n- faint ghosting\n- slight natural color-layer misregistration\n- subtle edge variation\n\nThe imperfections should be small and believable, as if the stamp was pressed onto paper by hand.\n\nAvoid perfectly aligned digital layers, smooth vector edges, clean gradients, or artificially exaggerated distress.\n\nThe stamp should look physically printed, not digitally illustrated.\n\nFIELD-NOTE TYPOGRAPHY\n\nGenerate a small amount of text based only on the actual location and imagery in the photograph:\n\nLocation — English name\nNo. — Number\nThree short English keywords\nGregorian calendar year\n\nPlace the text below or beside the stamp within the available whitespace.\n\nUse a small, understated typewriter or archival field-note style.\n\nThe typography should have very slight mechanical irregularity, as though typed or printed on an old field notebook.\n\nKeep it quiet and secondary to the photograph.\n\nSpell the location and all words correctly.\n\nDo not add slogans, brands, tourist phrases, decorative quotes, or unnecessary text.\n\nOVERALL REALISM\n\nThe finished image should feel like a real travel photograph mounted beside a small handmade field stamp on an architect's personal notebook page.\n\nPrioritize subtle physical realism over visual perfection.\n\nThe photograph should remain the strongest visual element.\n\nThe stamp should feel like a small fragment of memory extracted from the photograph rather than a second illustration.\n\nUse restrained contrast, natural imperfections, believable paper texture, and slightly imperfect printing.\n\nThe final result should feel quiet, tactile, documentary, collectible, and genuinely handmade.\n\nAvoid\n\nObvious dividing lines, circular seals, postage-stamp borders, perforations, wax seals, sticker layouts, souvenir-card designs, generic travel templates, smooth vector logos, polished digital illustrations, cartoon styling, 3D rendering, plastic textures, glossy gradients, excessive saturation, HDR effects, excessive text, decorative clutter, overly clean geometry, perfectly aligned ink layers, dense miniature architecture, or any alteration/redrawing of the original photograph.",
+      "promptPreview": "Rubber Stamp Travel Field Notes Poster — Natural Realism Version Create a separate “Rubber Stamp Travel Field Notes Poster” for each photo I upload. Output each photo individually. Never create a collage or combine multi",
+      "category": "Posters & Typography",
+      "styles": [
+        "UI",
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Social"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-538"
+    },
+    {
+      "id": 537,
+      "title": "地下档案馆暗黑概念海报",
+      "image": "/images/case537.jpg",
+      "imageAlt": "地下档案馆暗黑概念海报",
+      "sourceLabel": "@PromptSin",
+      "sourceUrl": "https://x.com/PromptSin/status/2092390329890849163",
+      "prompt": "Use case: stylized-concept\nAsset type: vertical social-media artwork for the “Your Dark Side” theme\n\nCreate an original psychological dark-surrealist scene in a colossal underground archive. Endless shelves of sealed black books rise like skyscrapers and vanish into fog. In the central aisle, a solitary human figure in bone-white clothing kneels before one open book on the floor. No words are visible. From the blank pages rises a delicate life-size figure made entirely of dense black smoke, standing face-to-face with the kneeling person. The smoke figure has no eyes or mouth; instead, its chest contains a small locked crimson door. Thin threads connect that door to the kneeling person’s hands, suggesting a secret self finally acknowledged.\n\nVertical 9:16 framing, towering shelves create a narrow symmetrical canyon, high-angle shaft of cold silver light, the two figures positioned small in the lower center, immense oppressive scale above them. Black paper, aged stone, floating ash, volumetric fog, subtle polished-floor reflections, premium photorealistic dark concept art, refined editorial composition, quiet dread and introspection rather than horror spectacle.\n\nColor palette: obsidian black, graphite, bone white, cold silver, a single muted crimson accent at the tiny door.\n\nConstraints: entirely original metaphor; blank book pages with absolutely no writing; no recognizable person; no text, symbols, logos, signatures, borders, or watermark.\n\nAvoid: visible letters or runes, portrait close-up, split face, black substance on skin, glowing eyes, gore, skulls, conventional ghosts, fantasy wizard styling, imitation of any named artist.",
+      "promptPreview": "Use case: stylized-concept Asset type: vertical social-media artwork for the “Your Dark Side” theme Create an original psychological dark-surrealist scene in a colossal underground archive. Endless shelves of sealed blac",
+      "category": "Scenes & Storytelling",
+      "styles": [
+        "UI",
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Social"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-537"
+    },
+    {
+      "id": 536,
+      "title": "春日樱花回眸电影人像",
+      "image": "/images/case536.jpg",
+      "imageAlt": "春日樱花回眸电影人像",
+      "sourceLabel": "@SheBuildsAI_",
+      "sourceUrl": "https://x.com/SheBuildsAI_/status/2092431090095149533",
+      "prompt": "{\n  \"title\": \"WHISPERS OF SPRING\",\n\n  \"scene\": \"A peaceful pathway beneath blooming cherry blossom trees during a warm spring afternoon. Pink blossoms fill the canopy overhead while delicate petals drift gracefully through the air. Soft sunlight filters through the branches, creating a dreamy and enchanting atmosphere.\",\n\n  \"subject\": \"A young woman walks away from the camera before gently turning her head over her shoulder with a soft, mysterious smile. She wears a flowing natural linen dress that moves gracefully with the breeze, highlighting her delicate facial features and effortless elegance.\",\n\n  \"detail\": \"Wind carries countless pink cherry blossom petals across the frame while warm sunlight creates glowing highlights throughout the scene. Every strand of hair moves naturally in the breeze, with ultra realistic skin texture, lifelike fabric folds, soft floral surroundings, and subtle atmospheric haze enhancing the cinematic realism.\",\n\n  \"atmosphere\": \"Elegant, peaceful, romantic, dreamy, timeless, cinematic, graceful, and enchanting.\",\n\n  \"lighting\": \"Warm spring sunlight filtering through cherry blossom branches, soft natural illumination, glowing highlights, volumetric light rays, gentle ambient shadows, and subtle atmospheric haze.\",\n\n  \"composition\": \"Cinematic editorial portrait captured with an 85mm lens, featuring the subject in a three-quarter over-the-shoulder pose. Shallow depth of field, creamy bokeh, balanced framing with flowering trees, soft leading lines, and immersive visual storytelling.\",\n\n  \"style\": \"Photorealistic, masterpiece, editorial fashion photography, analog film aesthetic, dreamy pastel color palette, ultra realistic skin texture, highly detailed, shallow depth of field, creamy bokeh, atmospheric haze, HDR, cinematic realism, 8K.\"\n}",
+      "promptPreview": "{   \"title\": \"WHISPERS OF SPRING\",   \"scene\": \"A peaceful pathway beneath blooming cherry blossom trees during a warm spring afternoon. Pink blossoms fill the canopy overhead while delicate petals drift gracefully throug",
+      "category": "Photography & Realism",
+      "styles": [
+        "Realistic",
+        "Character"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-536"
+    },
+    {
+      "id": 535,
+      "title": "同一人脸十二款发型 Lookbook",
+      "image": "/images/case535.jpg",
+      "imageAlt": "同一人脸十二款发型 Lookbook",
+      "sourceLabel": "@Ciri_ai",
+      "sourceUrl": "https://x.com/Ciri_ai/status/2092452220768002400",
+      "prompt": "Create a 12-panel grid (3 columns × 4 rows, numbered 1 to 12) showing the SAME person from the reference photo with 12 different hairstyles. This is a hairstyle lookbook. Final image aspect ratio: 4:5 (vertical/portrait).\nTHE ONLY THING THAT CHANGES BETWEEN PANELS IS THE HAIR ON THE HEAD (shape, style and length only). Everything else stays exactly as in the reference photo.\nIdentity Anchor (Critical)\nThe face must be IDENTICAL to the reference photo in every single panel. Preserve exactly: facial bone structure, jawline, cheekbones, nose shape, lips, eye shape and spacing, eyebrows, skin tone, skin texture (pores, natural imperfections), and overall facial proportions. This is the same real person in all 12 frames. Do NOT beautify, slim, or alter the face. Same age, same expression as in the reference.\nMandatory Rules (Do Not Violate)\n- NO SUNGLASSES. Eyes must be fully visible in all 12 panels.\n- NO ENVIRONMENTAL BACKGROUNDS. Every panel must have a plain, uniform, solid light grey studio backdrop with zero objects, zero textures, zero gradients. Just flat neutral grey.\n- Hair COLOR stays exactly as it appears in the reference photo in all 12 panels. Only the shape, length and style changes, never the color.\nKeep Identical in Every Panel (Do Not Change)\n- MAKEUP AND SKIN: If the person in the reference photo wears makeup, replicate it identically in every panel. Same lip color, same eye makeup, same brow grooming. If they wear no makeup, keep all panels makeup-free. Do NOT add, remove, or alter makeup between panels.\n- Clothing: the same clothing visible in the reference photo, replicated exactly.\n- Accessories: preserve ALL visible accessories from the reference photo (earrings, necklaces, rings, bracelets, piercings, watch, glasses, etc.). Do not omit, resize, recolor, or restyle any accessory. If the person wears prescription glasses (not sunglasses), keep them in every panel.\n- Background: plain solid light grey studio backdrop in every panel. No room, no furniture, no environment.\nThe 12 Hairstyles\n1. Pixie cut: very short, textured, slightly tousled on top with tapered sides and nape\n2. Classic bob: chin-length, straight, blunt ends, clean middle part\n3. Long layered waves: past the shoulders, soft voluminous waves with face-framing layers\n4. Sleek low bun: hair pulled back smoothly into a tight low bun at the nape, no flyaways\n5. Curtain bangs with medium-length hair: soft parted fringe framing the face, hair falling just past the shoulders\n6. High ponytail: hair pulled up into a sleek high ponytail, smooth crown, length falling behind\n7. French bob: short bob ending at the jawline with a soft blunt micro-fringe across the forehead\n8. Long straight hair with middle part: very long, sleek, pin-straight, falling well past the shoulders\n9. Shaggy wolf cut: medium length, heavy layers, choppy fringe, textured and voluminous with a slightly wild look\n10. Elegant updo: hair swept up into a polished chignon with soft face-framing tendrils\n11. Short curly crop: short voluminous curls all over, natural texture, tapered at the sides\n12. Side-swept Hollywood waves: long glamorous deep side part, sculpted vintage waves cascading over one shoulder\nPhotographic Specs\nShot on a Canon EOS R5 with an 85mm f/1.4 lens, studio portrait lighting (soft key light, subtle fill), shallow depth of field with sharp focus on the face. PLAIN SOLID LIGHT GREY STUDIO BACKGROUND in every panel. Natural skin rendering with visible pores and realistic hair strands (no plastic or CGI look). Consistent lighting, color grading and exposure across all 12 panels. Photorealistic, high detail, hyperrealistic, 8K. No illustration, no painterly effect, no over-smoothing. NO SUNGLASSES.\nEach panel clearly numbered 1 to 12 in the top-left corner. Overall output aspect ratio 4:5.",
+      "promptPreview": "Create a 12-panel grid (3 columns × 4 rows, numbered 1 to 12) showing the SAME person from the reference photo with 12 different hairstyles. This is a hairstyle lookbook. Final image aspect ratio: 4:5 (vertical/portrait)",
+      "category": "Characters & People",
+      "styles": [
+        "Realistic",
+        "Illustration",
+        "Brand"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-535"
+    },
+    {
+      "id": 534,
+      "title": "红光干扰实验编辑人像海报",
+      "image": "/images/case534.jpg",
+      "imageAlt": "红光干扰实验编辑人像海报",
+      "sourceLabel": "@Goodmanprotocol",
+      "sourceUrl": "https://x.com/Goodmanprotocol/status/2092471662126211143",
+      "prompt": "Create a medium-sized 9:16 experimental editorial portrait poster using the following customizable inputs:\n\nSubject: [Adult Male or Female Portrait]\nInterference: [Color Split / Narrow Light Beam / Horizontal Cut / Motion Veil]\nTitle: [Title]\nPalette: [Main Neutral Tones + One Accent Color]\nMood: [Sharp / Cinematic / Restrained / Experimental]\n\nCreate a striking close-up or waist-up portrait with the subject occupying a strong portion of the frame. Preserve realistic facial features, natural skin texture, authentic hair, realistic proportions, clear emotion, and a strong silhouette. The portrait must work visually as a fashion photograph before the graphic intervention is applied.\n\nUse only one primary interference method:\n\nColor Split: Uneven translucent bands selectively shift, reveal, separate, or distort portions of the portrait.\n\nNarrow Light Beam: A single controlled beam cuts across the face or body and continues naturally into the surrounding space.\n\nHorizontal Cut: Bold horizontal bands interrupt selected areas of the portrait and interact with oversized typography.\n\nMotion Veil: Keep the main portrait sharp while selected areas create subtle horizontal photographic motion trails.\n\nMake typography an integral part of the composition. Use one dominant headline, allowing letters to crop beyond the frame, overlap the subject, disappear behind the body, or interact with the interference.\n\nKeep supporting text minimal: one small series label and one short phrase.\n\nUse mostly black, white, grey, charcoal, or deep neutral tones, plus one accent color. Keep skin tones natural and avoid excessive warmth or yellow grading.\n\nAdd only a few subtle graphic details such as fine lines, circles, or open corner marks when necessary.\n\nThe final composition should feel like a premium fashion editorial, contemporary photography poster, or experimental art-direction piece—clean, intentional, sophisticated, and visually balanced.\n\nAvoid multiple competing effects, dense text, UI elements, heavy glitches, random collage, excessive decoration, numbering, “Vol.” or “Issue” labels, sparkle symbols, logos, watermarks, distorted anatomy, plastic skin, oversaturation, and generic template aesthetics.\n\nKeep the overall treatment medium in scale, refined, adaptable, and universally applicable to different people, titles, themes, palettes, and editorial concepts.",
+      "promptPreview": "Create a medium-sized 9:16 experimental editorial portrait poster using the following customizable inputs: Subject: [Adult Male or Female Portrait] Interference: [Color Split / Narrow Light Beam / Horizontal Cut / Motion",
+      "category": "Posters & Typography",
+      "styles": [
+        "UI",
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-534"
+    },
+    {
+      "id": 533,
+      "title": "手绘涂鸦时尚人物插画",
+      "image": "/images/case533.jpg",
+      "imageAlt": "手绘涂鸦时尚人物插画",
+      "sourceLabel": "@Sairah_0",
+      "sourceUrl": "https://x.com/Sairah_0/status/2092473965927334071",
+      "prompt": "Transform the subject from the reference image into a cute, quirky hand-drawn doodle illustration.\n\nUse a minimalist children’s storybook / fashion sketch aesthetic with loose, imperfect black ink lines, visible scribbly pencil strokes, subtle cross-hatching, and a charming handmade feel. Keep the character’s recognizable facial features, hairstyle, face shape, clothing, accessories, and overall identity from the reference while simplifying them into a cute illustrated character.\n\nCharacter design:\n- Oversized head and small simplified body\n- Simple dot-like eyes and tiny minimal mouth\n- Soft rounded facial features\n- Slight rosy pink blush on the cheeks\n- Messy, expressive hand-drawn hair with many loose sketch lines\n- Slightly exaggerated, playful proportions\n- Natural, relaxed pose with a whimsical fashion-illustration feel\n\nArt style:\n- Black-and-white pencil/ink doodle drawing\n- Rough, imperfect sketch lines rather than clean digital outlines\n- Dense scribbled hair and clothing details\n- Light hand-colored accents\n- Subtle watercolor/crayon-like coloring\n- Minimal shading\n- White or off-white clean background\n- Lots of negative space\n- Cute, innocent, playful, cozy aesthetic\n- Looks like an original handmade notebook/fashion doodle illustration\n\nPreserve the important details of the reference image while converting everything into this consistent doodle-art style. The final image should feel hand-sketched, slightly imperfect, adorable, expressive, and effortlessly stylish, not like polished vector art or 3D cartoon art.",
+      "promptPreview": "Transform the subject from the reference image into a cute, quirky hand-drawn doodle illustration. Use a minimalist children’s storybook / fashion sketch aesthetic with loose, imperfect black ink lines, visible scribbly ",
+      "category": "Characters & People",
+      "styles": [
+        "UI",
+        "Illustration",
+        "Brand"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-533"
+    },
+    {
+      "id": 532,
+      "title": "六宫格柠檬饮料微缩广告",
+      "image": "/images/case532.jpg",
+      "imageAlt": "六宫格柠檬饮料微缩广告",
+      "sourceLabel": "@ou_zhen599",
+      "sourceUrl": "https://x.com/ou_zhen599/status/2091160215928574397",
+      "prompt": "Create a Cannes-level premium summer beverage campaign poster for a fictional lemon drink brand called \"LIMORA\", using a strict 2-column by 3-row grid layout with six perfectly aligned panels. Preserve the exact structural logic of the composition: each panel shows the same tiny ultra-realistic young woman on a bright sandy beach interacting with oversized lemons, lemon slices, lemon juice, or the final branded drink, while selected panels include a giant realistic human hand entering from above. The full poster must feel like one unified high-end advertising storyboard in motion, where the eye flows continuously from fresh citrus fruit to crafted beverage desire. The lemon product world must remain the absolute visual hero across all six panels.\n\nOverall composition:\nUse a clean six-panel grid with thin white dividers, equal panel proportions, consistent horizon line, consistent beach-ocean background, and unified lighting. Every panel should feel self-contained yet rhythmically connected, as if six consecutive scenes from the same luxury summer commercial were frozen at their most iconic moments. Keep the miniature woman and the oversized lemon-related object centered in each frame, with the sea softly blurred in the background and the sand sharply rendered in the foreground. The full page must read instantly from a distance, with strong commercial clarity and polished editorial control.\n\nOrbit visual flow:\nDesign the entire set around one strong circulation of motion from panel 1 to panel 6. The action should escalate visually: touch, recline, squeeze, travel, embrace, taste. Use repeating directional rhythms in hair movement, arm gestures, leg angles, juice droplets, spoon angle, lemon slice placement, straw tilt, and the position of the entering hand so the eye naturally sweeps across the poster in a flowing wave. Build subtle diagonal energy inside every panel, making the citrus world feel alive, breezy, sparkling, and in motion. The whole set should feel like summer energy orbiting around the brand’s lemon drink.\n\nNarrative panel sequence:\nPanel 1: the tiny woman hugs a giant whole lemon on the sand while a giant adult hand descends from above, delicately positioning the lemon. Her pose is lively and slightly off-balance, as if the scene has just begun.\nPanel 2: she reclines elegantly inside a halved lemon as though it were a luxury beach chaise, wearing dark sunglasses and holding a tiny parasol drink pick, while a floating lemon slice is lowered from above like a radiant citrus sun.\nPanel 3: a giant hand squeezes a vertically cut lemon from above, sending translucent juice streams and droplets downward in a sparkling arc. The woman reacts dynamically beneath it, arms raised, body tilted, caught in the middle of the citrus action.\nPanel 4: she rides in a small refined wooden cart piled with lemons, being pulled by a whimsical premium lemon-shaped creature or rolling lemon harness. The cart must feel physically grounded, artisanal, and stylish rather than cartoonish.\nPanel 5: the hero climax panel. A tall branded LIMORA lemonade glass dominates the frame, packed with ice cubes, lemon slices, pale sparkling liquid, condensation, a fresh green straw, and a refined cocktail umbrella. The tiny woman hugs the cold glass joyfully, and this panel must be the strongest product-selling moment in the entire composition.\nPanel 6: she sits inside a halved lemon while a large polished spoon descends from above carrying glossy lemon sorbet or crushed lemon ice, creating a final delicious serving beat with playful anticipation.\n\nHero product focus:\nThe real hero is the lemon beverage system: whole citrus fruit, sliced fruit, squeezed juice, ice, sparkling drink, sorbet, and premium serving details. Every lemon must feel hyper-real, fragrant, sunlit, juicy, and tactile, with detailed skin pores, subtle waxy oil sheen, translucent membranes, wet cut surfaces, and bright natural citrus pulp. The branded glass in panel 5 must be the most visually dominant product object in the set, with crystal-clear glass, refined original English branding reading \"LIMORA\", elegant condensation, premium ice refraction, and luminous pale-yellow drink clarity.\n\nCharacter design:\nDepict one recurring ultra-realistic miniature young woman across all six panels, wearing the same fitted green floral mini dress and white sandals, with long dark wavy hair and naturally expressive features. She must look like a real scaled-down human placed into a surreal oversized citrus world. Keep anatomy coherent and believable in every frame: correct head-to-body proportion, realistic shoulders, collarbones, arms, waist, hips, thighs, knees, calves, ankles, and feet, with perfectly formed hands and five fingers clearly visible. Her expressions should shift panel by panel: surprised delight, relaxed confidence, playful alarm, exhilaration, joyful refreshment, amused anticipation. Skin must remain photorealistic with pores, natural tonal shifts, faint knee and elbow texture, realistic skin elasticity, and no plastic AI beauty finish.\n\nLighting:\nUse bright premium seaside daylight with a soft upper-left sun direction and gentle atmospheric diffusion. Maintain luminous fresh summer lighting across all six scenes, with short, soft-edged shadows and crisp dimensional highlights. Juice droplets, lemon pulp, ice cubes, spoon edges, sunglasses, glass rim, and condensation should all catch clean sparkling highlights. Lighting must feel luxurious, refreshing, and physically consistent from panel to panel.\n\nMaterials:\nLemons: ultra-detailed peel pores, subtle dimpling, natural rind thickness, glistening wet pulp, believable cut translucency, realistic juice behavior.\nDrink glass: high-clarity premium glass, accurate refraction, heavy base, condensation beads, crisp logo print, ice transparency, sparkling carbonated liquid feel.\nSorbet and juice: glossy, semi-translucent, cold, wet, appetizing, physically accurate.\nDress: lightweight summer cotton with tiny green floral print, natural wrinkles, fabric tension, and wind-responsive edges.\nHair and skin: realistic strands, fine flyaways, natural shine, believable skin texture.\nLarge hand: realistic adult fingers, soft skin compression, natural nails, coherent scale perspective.\nCart and props: refined warm wood grain, polished wheels, believable joints and harness elements.\nBeach environment: fine sunlit sand with miniature footprints and pressure marks, soft shoreline blur, clean turquoise sea with pale foam.\n\nColor system:\nBuild the palette around lemon yellow, fresh citrus green, turquoise sea, pale sky blue, warm beach beige, crisp white highlights, and restrained natural skin tones. Yellow must remain the dominant hero color, supported by green and turquoise. Keep the image bright, appetizing, summery, clean, and internationally commercial. Avoid random accent colors.\n\nTypography and branding:\nDo not copy any text from the sample. Keep typography minimal and original. Place refined English branding only on the hero glass and optionally a tiny campaign line below the full grid, such as: \"LIMORA — Bright in Motion\". Typography must feel premium, modern, minimal, and secondary to the visual storytelling.\n\nArt direction:\nHyper-real premium surreal advertising photography, luxury FMCG campaign, storyboard energy, elegant humor, cinematic micro-world illusion, high-end beverage styling, global summer launch poster, polished magazine-grade finish, sharp product realism, strong narrative rhythm, premium brand coherence.\n\nNegative prompt:\ncopied text, Chinese text, existing brand names, cartoon style, toy-like figure, grotesque oversized head, deformed anatomy, extra fingers, missing fingers, fused fingers, twisted wrists, broken limbs, distorted feet, AI plastic skin, over-smoothed skin, fake citrus texture, unrealistic juice physics, muddy lemon pulp, cloudy glass, weak product focus, inconsistent lighting, inconsistent horizon, messy grid, cluttered props, meme aesthetic, cheap humor, childish illustration, low-resolution detail, oversaturated colors, dead black patches, distorted giant hand perspective",
+      "promptPreview": "Create a Cannes-level premium summer beverage campaign poster for a fictional lemon drink brand called \"LIMORA\", using a strict 2-column by 3-row grid layout with six perfectly aligned panels. Preserve the exact structur",
+      "category": "Products & E-commerce",
+      "styles": [
+        "UI",
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Social"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-532"
+    },
+    {
+      "id": 531,
+      "title": "水晶框国家旅行广告海报",
+      "image": "/images/case531.jpg",
+      "imageAlt": "水晶框国家旅行广告海报",
+      "sourceLabel": "@Taaruk_",
+      "sourceUrl": "https://x.com/Taaruk_/status/2091391283063361558",
+      "prompt": "Create a luxurious, dreamy country travel-art collection in the exact visual language of an elegant premium tourism campaign: a large transparent crystal/glass architectural frame or arched glass display standing on a glossy reflective surface, containing a highly detailed cinematic illustration of the destination. For [COUNTRY], feature its most iconic landmarks, historic architecture, distinctive landscapes, local transportation, cultural elements, national flag, flowers and recognizable scenery arranged as one seamless poetic panorama. Use warm golden-hour sunlight, soft atmospheric haze, pastel cream, champagne, muted blue and sage tones, delicate clouds, subtle birds, realistic glass refraction and rainbow prism highlights along the edges. Create a perfect mirror reflection beneath the glass structure, extending the entire composition downward with beautifully softened reflections. Add elegant editorial typography at the top reading “[COUNTRY]”, with smaller refined text “THE SOUL OF [COUNTRY]” and “A JOURNEY THROUGH TIME • 2026” beneath it. Sophisticated luxury travel magazine aesthetic, photorealistic yet painterly, cinematic depth, fine-art composition, extremely detailed architecture, serene atmosphere, premium advertising photography, symmetrical balanced framing, soft film grain, 8K, vertical 4:5, no clutter, no modern UI elements, no extra text.",
+      "promptPreview": "Create a luxurious, dreamy country travel-art collection in the exact visual language of an elegant premium tourism campaign: a large transparent crystal/glass architectural frame or arched glass display standing on a gl",
+      "category": "Posters & Typography",
+      "styles": [
+        "UI",
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Story"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-531"
+    },
+    {
+      "id": 530,
+      "title": "实拍背景涂鸦人物替换",
+      "image": "/images/case530.jpg",
+      "imageAlt": "实拍背景涂鸦人物替换",
+      "sourceLabel": "@Emmma__0",
+      "sourceUrl": "https://x.com/Emmma__0/status/2091391958128251286",
+      "prompt": "Transform ONLY the people in the uploaded photo into adorable hand-drawn doodle characters while keeping the original photographic background unchanged.\n\nCORE RULE:\nBackground = original realistic photo.\nPeople = cute hand-drawn doodle characters.\n\nPRESERVE THE BACKGROUND:\nKeep the original sky, landscape, buildings, water, furniture, ground, plants, railings, objects, lighting, colors, perspective, camera angle, framing, and textures as close to the original photo as possible.\n\nDo NOT redraw, simplify, illustrate, or apply doodle/crayon/pencil effects to the background or environmental objects.\n\nTRANSFORM ONLY PEOPLE:\nReplace each person with a charming, naive doodle version while preserving:\n- exact number of people\n- original position and relative scale\n- front/back/side/three-quarter orientation\n- head and body direction\n- pose and gesture\n- arm and leg positions\n- interactions with people or objects\n- hairstyle, clothing colors, and major accessories\n\nIMPORTANT:\nIf someone faces away, keep them back-facing.\nIf sideways, keep them sideways.\nIf facing forward, keep them forward.\nNever rotate a person toward the viewer or invent a face that is not visible.\n\nCUTE DOODLE STYLE:\nFreely reinterpret realistic anatomy into an adorable, imperfect character:\n- oversized round head\n- tiny compact body\n- short simplified arms and legs\n- tiny hands and feet\n- cute awkward proportions\n- loose scribbled hair\n- tiny dot eyes and simple facial features when visible\n- rosy scribbled cheeks when appropriate\n\nKeep the original pose recognizable, but simplify and slightly exaggerate it for cuteness.\n\nDRAWING STYLE:\nLoose naive hand-drawn doodle, like a quick children's sketch.\nUse thin shaky black outlines, imperfect shapes, overlapping sketch lines, scribbled colored-pencil or crayon fills, uneven coloring, white gaps, and slightly messy edges.\n\nThe character should look intentionally roughly drawn but extremely cute.\n\nOBJECTS:\nObjects, furniture, scenery, and items around the people should remain photographic whenever possible. A doodle character may naturally touch or hold a real photographic object.\n\nINTEGRATION:\nKeep correct scale, ground contact, depth, and occlusion so the doodle characters naturally occupy the same locations as the original people.\n\nFINAL LOOK:\nIt should feel like the real people were removed from the original photograph and replaced with adorable little hand-drawn doodle versions of themselves, while the real-world background remained untouched.\n\nPrioritize:\n1. Original photographic background\n2. Person position and scale\n3. Exact body orientation\n4. Pose and gesture\n5. Cute exaggerated doodle character design\n\nAvoid full-image illustration, background doodling, realistic anatomy, anime, manga, 3D cartoon, polished digital art, vector lines, changed poses, changed orientation, added people, or invented faces.",
+      "promptPreview": "Transform ONLY the people in the uploaded photo into adorable hand-drawn doodle characters while keeping the original photographic background unchanged. CORE RULE: Background = original realistic photo. People = cute han",
+      "category": "Characters & People",
+      "styles": [
+        "UI",
+        "Realistic",
+        "Illustration"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-530"
+    },
+    {
+      "id": 529,
+      "title": "云朵气球山脊旅行人像",
+      "image": "/images/case529.jpg",
+      "imageAlt": "云朵气球山脊旅行人像",
+      "sourceLabel": "@AiwithLariab",
+      "sourceUrl": "https://x.com/AiwithLariab/status/2091394735416160715",
+      "prompt": "Create a dreamy ultra-photorealistic outdoor fashion photograph based on the person in @image1.\n\nIDENTITY & FACE:\nPreserve the exact facial identity of the person in @image1. Keep the same face shape, facial proportions, eyes, eyebrows, nose, lips, skin tone, hairstyle, hairline, and all recognizable facial features. The person must remain clearly recognizable and consistent with the reference image. Do not redesign or replace the face.\n\nPOSE & COMPOSITION:\nCreate a full-body vertical portrait of the person standing naturally on a grassy mountain ridge. The body is slightly turned toward the camera while the face looks naturally toward the viewer. One hand gently holds several long white strings attached to an enormous fluffy white cloud floating directly above the person like a whimsical balloon bouquet. The other hand rests naturally beside the body.\n\nSCENE:\nA breathtaking high-altitude mountain landscape with layers of distant blue-green mountains stretching across the horizon. The subject stands on a natural grassy ridge with delicate wild grass around her feet. Vast open sky dominates the upper portion of the composition.\n\nCLOUD BALLOON:\nCreate one enormous soft white cumulus cloud directly above the subject, visually resembling a giant floating cloud balloon. Multiple thin white strings descend from the cloud and gather elegantly into the person's hand. The strings should look physically believable and naturally connected to the cloud. The cloud is fluffy, voluminous, bright white, and beautifully illuminated by sunlight.\n\nCLOTHING:\nDress the person in a completely modest, elegant, fully covered outfit:\n\nlong flowing light-blue maxi dress reaching the ankles\n\nloose long sleeves covering the arms completely\n\nhigh and modest neckline\n\nopaque non-transparent fabric\n\nfull-length flowing skirt\n\nsimple white closed-toe sneakers\n\nsmall woven crossbody bag\nNo exposed midriff, no deep neckline, no sheer fabric, no short skirt, no revealing clothing. The outfit should look graceful, comfortable, elegant, and wholesome.\n\nACCESSORIES:\nAdd tasteful round dark sunglasses and a simple woven shoulder/crossbody bag. Keep accessories minimal and natural.\n\nHAIR:\nKeep the person's original hairstyle and hair color from @image1 as much as possible. Allow a few natural strands of hair to move gently in the mountain breeze.\n\nLIGHTING:\nBright natural midday sunlight, soft atmospheric illumination, realistic highlights on the white cloud and dress, subtle natural shadows, crisp but gentle exposure, beautiful blue-sky contrast.\n\nPHOTOGRAPHY STYLE:\nUltra-photorealistic professional travel-fashion photography, realistic skin texture, natural fabric details, physically accurate lighting, realistic depth of field, cinematic atmospheric perspective, high dynamic range, sharp subject with a softly detailed background.\n\nCOLOR PALETTE:\nSky blue, soft white, pale powder blue, natural green grass, and distant blue mountains. Clean, airy, dreamy color grading with a peaceful summer atmosphere.\n\nCOMPOSITION:\n9:16 vertical portrait, full body visible from head to shoes, subject positioned slightly below center, enormous blue sky and cloud occupying the upper half, distant mountains forming a soft horizontal horizon, balanced negative space, visually striking editorial travel photograph.\n\nIMPORTANT:\nPreserve the exact identity from @image1. Do not change the person's recognizable face or facial structure. Keep the outfit completely modest, opaque, and fully covering. Maintain realistic anatomy, natural hands, realistic proportions, and believable interaction between the person, strings, cloud, grass, and mountain environment.",
+      "promptPreview": "Create a dreamy ultra-photorealistic outdoor fashion photograph based on the person in @image1. IDENTITY & FACE: Preserve the exact facial identity of the person in @image1. Keep the same face shape, facial proportions, ",
+      "category": "Photography & Realism",
+      "styles": [
+        "Poster",
+        "Realistic",
+        "Brand"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-529"
+    },
+    {
+      "id": 528,
+      "title": "圣诞街景 Chibi 真实背景人像",
+      "image": "/images/case528.jpg",
+      "imageAlt": "圣诞街景 Chibi 真实背景人像",
+      "sourceLabel": "@Sairah_0",
+      "sourceUrl": "https://x.com/Sairah_0/status/2091401764360896762",
+      "prompt": "Use the uploaded image as the primary reference. Transform the person into a cute, hand-drawn anime/chibi character while preserving the original person’s recognizable facial features, hairstyle, outfit, pose, and accessories.\n\nA cute young woman standing on a modern city street at blue hour, surrounded by tall illuminated skyscrapers and festive Christmas decorations. A huge glowing Christmas tree covered in warm golden lights stands directly behind her, creating a magical holiday atmosphere. The street is filled with elegant decorative lights, pedestrians, modern architecture, and soft evening city illumination.\n\nRender the character in a charming Japanese hand-drawn anime/chibi illustration style with expressive large eyes, soft blush on the cheeks, delicate facial details, textured pencil-and-ink outlines, subtle watercolor-like coloring, and slightly imperfect handmade sketch details. Keep the background photorealistic and highly detailed, creating a beautiful contrast between the illustrated character and the real-world environment.\n\nCinematic composition, natural perspective, soft evening lighting, warm Christmas glow, realistic background depth, detailed clothing texture, cozy winter atmosphere, high detail, aesthetically pleasing, vertical portrait composition.",
+      "promptPreview": "Use the uploaded image as the primary reference. Transform the person into a cute, hand-drawn anime/chibi character while preserving the original person’s recognizable facial features, hairstyle, outfit, pose, and access",
+      "category": "Characters & People",
+      "styles": [
+        "Poster",
+        "Realistic",
+        "Illustration"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-528"
+    },
+    {
+      "id": 527,
+      "title": "Rio 旅行票据纸雕立体海报",
+      "image": "/images/case527.jpg",
+      "imageAlt": "Rio 旅行票据纸雕立体海报",
+      "sourceLabel": "@john_my07",
+      "sourceUrl": "https://x.com/john_my07/status/2091408386466214031",
+      "prompt": "Create a highly detailed, photorealistic miniature travel-poster diorama inspired by Rio de Janeiro, arranged as a handcrafted 3D paper scene on a warm ivory, slightly textured background.\n\nIn the foreground, a realistic human hand holds a vintage Brazilian travel ticket or Rio-themed transit card vertically on the left side. Give the card aged paper texture, subtle printing imperfections, elegant typography, and authentic-looking travel details. From behind the card, a miniature Rio de Janeiro landscape physically rises outward like an intricate pop-up diorama.\n\nMake Christ the Redeemer the dominant central landmark, positioned high above a miniature cityscape with lush green mountains surrounding it. Below, build a tiny realistic Rio street featuring a classic yellow taxi, colorful buildings, palm trees, pedestrians, cyclists, street lamps, tiled sidewalks, and small Brazilian urban details. Add Copacabana beach elements in the distance with tiny umbrellas, beachgoers, and a glimpse of the Atlantic Ocean. Layer the architecture and terrain so everything appears physically constructed from paper, wood, plaster, and miniature materials, with convincing depth, cast shadows, overlapping surfaces, and a slight three-quarter perspective.\n\nAround the main 3D scene, incorporate delicate black, charcoal, and muted sepia hand-drawn travel illustrations on the cream paper. Include a small Sugarloaf Mountain sketch in the upper left, an artistic Copacabana promenade illustration in the upper right, a detailed Selarón Steps sketch along the right side, and a small Ipanema beachfront skyline drawing near the bottom. Add subtle handwritten travel notes, tiny map markings, architectural outlines, compass symbols, postage-stamp details, and understated Brazilian travel annotations.\n\nKeep the composition refined rather than crowded. Blend realistic miniature photography with vintage travel-journal design, tactile paper fibers, faint ink bleed, imperfect hand-drawn lines, warm natural studio lighting, gentle shadows, subtle film grain, and a sophisticated cream, charcoal, muted green, ocean blue, and Brazilian yellow palette.\n\nThe final image should feel like a premium collectible Rio de Janeiro travel postcard transformed into a physical miniature world, with the central diorama sharply detailed and the surrounding illustrations slightly softer. Highly realistic human hand and fingers, believable miniature materials, cinematic product photography, editorial travel-magazine aesthetic, shallow depth of field, ultra-fine textures, photorealistic 3D details, vertical 4:5 composition, 8K quality.",
+      "promptPreview": "Create a highly detailed, photorealistic miniature travel-poster diorama inspired by Rio de Janeiro, arranged as a handcrafted 3D paper scene on a warm ivory, slightly textured background. In the foreground, a realistic ",
+      "category": "Posters & Typography",
+      "styles": [
+        "UI",
+        "Poster",
+        "Realistic"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Travel"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-527"
+    },
+    {
+      "id": 526,
+      "title": "体积激光黑场海报",
+      "image": "/images/case526.jpg",
+      "imageAlt": "体积激光黑场海报",
+      "sourceLabel": "@zhidawang219555",
+      "sourceUrl": "https://x.com/zhidawang219555/status/2090246237094310178",
+      "prompt": "从全黑剧场开始，像切标本一样用六片真实体积激光把空间分层。光面必须有明确起点、透视和薄雾中的厚度，人物站在交汇点，透明道具折射出一小束异色光扇。构图沿左下至右上的对角线推进，脸只用一道克制边光揭示；标题与其中一片光面共享透视，小字留在纯黑负空间。每次替换主题与角色时，不得退化成夜店模板、HUD、霓虹城市或无物理来源的光线。",
+      "promptPreview": "从全黑剧场开始，像切标本一样用六片真实体积激光把空间分层。光面必须有明确起点、透视和薄雾中的厚度，人物站在交汇点，透明道具折射出一小束异色光扇。构图沿左下至右上的对角线推进，脸只用一道克制边光揭示；标题与其中一片光面共享透视，小字留在纯黑负空间。每次替换主题与角色时，不得退化成夜店模板、HUD、霓虹城市或无物理来源的光线。",
+      "category": "Posters & Typography",
+      "styles": [
+        "Poster",
+        "Character"
+      ],
+      "scenes": [
+        "Travel"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-526"
+    },
+    {
+      "id": 525,
+      "title": "酒红棚拍男士时尚肖像",
+      "image": "/images/case525.jpg",
+      "imageAlt": "酒红棚拍男士时尚肖像",
+      "sourceLabel": "@iamsofiaijaz",
+      "sourceUrl": "https://x.com/iamsofiaijaz/status/2090294894187413883",
+      "prompt": "A cinematic, ultra-realistic close-up portrait of a stylish man, using the provided image as an accurate face reference. Preserve his natural facial identity, thick naturally curly dark brown hair, neatly trimmed salt-and-pepper beard, strong masculine facial structure, and realistic facial proportions. He wears sophisticated round vintage amber-brown sunglasses and a premium deep burgundy suede jacket over a fitted black silk-knit shirt, creating a refined luxury fashion aesthetic.\n\nWarm cinematic studio lighting with a soft amber-golden key light illuminating the face from the front-left, complemented by a subtle crimson-red rim light outlining the hair and shoulders. The background is a rich burgundy, wine-red, and dark plum gradient, with soft atmospheric haze and subtle diffused light creating depth without distracting from the subject. Elegant warm highlights contrast beautifully against the dark clothing.\n\nExtremely detailed natural skin texture, individual beard hairs, realistic pores, subtle facial imperfections, sharp eyes visible behind slightly tinted lenses, natural reflections on the sunglasses, rich dimensional shadows, realistic fabric and suede texture, shallow depth of field. Sophisticated luxury fashion campaign, mysterious and confident mood, premium men's editorial photography, cinematic color grading, photorealistic, HDR, professional studio photography, 85mm portrait lens, f/1.8, crisp facial details, soft background bokeh, centered composition, head-and-shoulders framing, powerful masculine presence, understated elegance, 3:4 aspect ratio.",
+      "promptPreview": "A cinematic, ultra-realistic close-up portrait of a stylish man, using the provided image as an accurate face reference. Preserve his natural facial identity, thick naturally curly dark brown hair, neatly trimmed salt-an",
+      "category": "Photography & Realism",
+      "styles": [
+        "Realistic",
+        "Brand"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-525"
+    },
+    {
+      "id": 524,
+      "title": "纸雕拼贴乡野人像",
+      "image": "/images/case524.jpg",
+      "imageAlt": "纸雕拼贴乡野人像",
+      "sourceLabel": "@AiwithLariab",
+      "sourceUrl": "https://x.com/AiwithLariab/status/2090297565732585554",
+      "prompt": "Create a premium whimsical handcrafted paper-collage diorama inspired exactly by the uploaded reference image.\n\nUse the uploaded girl reference as the ONLY human subject. Preserve her facial identity with maximum accuracy: exact face shape, eyes, eyebrows, nose, lips, skin tone, hairstyle, hairline, and recognizable facial features. Strict face identity lock — do not redesign, beautify, stylize, age, de-age, or replace her face.\n\nThe girl stands alone in the center of the composition in a graceful, natural editorial pose. She is facing the camera with a relaxed confident expression and a subtle natural smile. Her body is slightly angled, creating a candid fashion-editorial feeling. She holds a beautiful small mixed bouquet of flowers naturally with both hands in front of her. One leg is slightly crossed in front of the other for an elegant relaxed pose.\n\nOutfit\n\nChange the outfit completely from the original reference while keeping it fully modest and elegant:\n\n- elegant ivory/cream long-sleeve button-up blouse\n- high-waisted wide-leg beige trousers\n- full-length trousers with complete coverage\n- simple cream closed-toe shoes\n- small brown leather shoulder bag\n- no revealing clothing\n- no exposed midriff\n- sophisticated countryside editorial fashion\n- natural realistic fabric folds and texture\n\nEnvironment\n\nCreate a beautiful handcrafted 3D paper-diorama countryside scene:\n\n- layered blue mountains in the distance\n- green forest and rolling hills\n- peaceful blue lake\n- grassy lakeside landscape\n- textured beige paper pathway in the foreground\n- rustic white wooden fence behind the girl\n- dreamy pastel sky\n\nSurround the composition with oversized handmade paper flowers in pink, peach, cream, white, and light blue, with layered green paper leaves.\n\nAdd decorative paper elements floating in the sky:\n\n- pink paper hearts\n- yellow paper stars\n- blue stars\n- soft white and pale-blue clouds\n- tiny colorful paper dots\n\nPlace two tiny vintage vehicles near the lake in the background: a cream vintage camper van on one side and a small vintage blue-green car on the other.\n\nArt Direction\n\nThe entire environment should look handcrafted from premium textured paper while the girl remains photorealistic and seamlessly integrated into the paper world.\n\nUse:\nhand-torn paper edges, visible paper fibers, layered cardstock, subtle imperfections, realistic paper shadows, dimensional cut-paper elements, tactile textures, soft natural daylight, cinematic depth, gentle atmospheric perspective, premium editorial photography.\n\nThe final image should feel like a luxury handmade paper storybook brought to life with a real photographic subject.\n\nComposition\n\nCentered full-body girl\nFace clearly visible and sharply detailed\nNatural elegant pose\nBouquet held naturally\nRustic fence framing the subject\nLake and mountains creating depth\nLarge flowers framing both lower corners\nClouds and decorative elements filling the upper background\nBalanced symmetrical composition with organic handmade imperfections\nGirl remains the strongest focal point\n\nFinal Look\n\nPhotorealistic girl + handcrafted paper-art environment\nDreamy pastel colors\nLuxury editorial aesthetic\nWhimsical miniature diorama\nSoft cinematic daylight\nHighly detailed paper textures\nNatural realistic skin\nSharp facial identity\nProfessional fashion photography\nPinterest/Instagram viral visual aesthetic\nMagazine-quality composition\n\nVertical 4:5 portrait composition, full-body framing, ultra-detailed, high resolution, clean polished finish, visually striking, aesthetically balanced, premium handcrafted paper-collage photography.",
+      "promptPreview": "Create a premium whimsical handcrafted paper-collage diorama inspired exactly by the uploaded reference image. Use the uploaded girl reference as the ONLY human subject. Preserve her facial identity with maximum accuracy",
+      "category": "Illustration & Art",
+      "styles": [
+        "Poster",
+        "Realistic",
+        "Brand"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Fashion"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-524"
+    },
+    {
+      "id": 523,
+      "title": "曼哈顿公园水彩旅行插画",
+      "image": "/images/case523.jpg",
+      "imageAlt": "曼哈顿公园水彩旅行插画",
+      "sourceLabel": "@Taaruk_",
+      "sourceUrl": "https://x.com/Taaruk_/status/2090307485374578755",
+      "prompt": "Create a vertical editorial travel illustration inspired by vintage European travel posters, featuring a peaceful summer afternoon in a grand city park with a recognizable Manhattan-style skyline in the background. Use delicate hand-drawn ink outlines combined with soft, slightly imperfect watercolor washes on warm textured cream paper. Show a wide green lawn filled with people relaxing, reading, walking, jogging, cycling, and having picnics. In the foreground, a casually dressed young couple sits together on a picnic blanket beside a woven basket. Include elegant black vintage park lamps, winding pathways, dense leafy trees framing the composition, and detailed historic and modern skyscrapers rising behind the park. Add a small picturesque stone arch bridge over a calm pond near the bottom of the artwork. Use muted sage green, olive, warm beige, soft blue, pale gray, and subtle golden sunlight, with natural watercolor bleeding, paper grain, fine pen hatching, and an airy sophisticated travel-journal aesthetic. No text, no letters, no logos, no typography, no captions, no signs. Vertical 4:5 composition, highly detailed, elegant, nostalgic, handcrafted watercolor-and-ink illustration.",
+      "promptPreview": "Create a vertical editorial travel illustration inspired by vintage European travel posters, featuring a peaceful summer afternoon in a grand city park with a recognizable Manhattan-style skyline in the background. Use d",
+      "category": "Illustration & Art",
+      "styles": [
+        "Poster",
+        "Illustration",
+        "Brand"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Travel"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-523"
+    },
+    {
+      "id": 522,
+      "title": "儿童故事书手绘头像",
+      "image": "/images/case522.jpg",
+      "imageAlt": "儿童故事书手绘头像",
+      "sourceLabel": "@Sairah_0",
+      "sourceUrl": "https://x.com/Sairah_0/status/2090321208441262454",
+      "prompt": "Use the single uploaded photo as the only visual reference. Transform the person into an adorable hand-drawn 2D children’s storybook character, while keeping their identity immediately recognizable.\n\nPreserve exactly from the photo:\n- Facial features and skin tone\n- Real hairstyle, length, texture, and color\n- Exact clothing, colors, patterns, and layering\n- Glasses, jewelry, headwear, bags, and all visible accessories\n\nDo not invent or copy hairstyles, outfits, accessories, braids, pigtails, bows, bonnets, or headscarves from any reference artwork.\n\n### Character\nUse an oversized rounded head, tiny compact body, short arms, narrow shoulders, soft rounded silhouette, and cute childlike proportions. Keep the head visually dominant. Avoid realistic anatomy.\n\n### Face\nSimplify into tiny dot/oval eyes, minimal nose, tiny smiling mouth, rounded cheeks, and soft peach/pink blush. Keep recognizable facial characteristics. No realistic eyes, detailed lips, anime features, glossy 3D rendering, or heavy shading.\n\n### Hair & Clothing\nRecreate the exact hairstyle and outfit from the uploaded photo, simplified into chunky hand-drawn shapes. Preserve important colors, patterns, jewelry, glasses, and other recognizable details.\n\n### Style\nHandmade 2D picture-book aesthetic using soft gouache, wax crayon, colored pencil, and dry pastel. Use slightly irregular dark-brown linework, subtle paper grain, uneven pigment, soft brush marks, and imperfect painted edges. Avoid clean vector art, CGI, anime, or photorealism.\n\n### Composition\nSquare 1:1 portrait, chest/waist-up, centered and facing mostly forward, with balanced negative space. Use a relaxed, charming pose.\n\n### Background\nSimple warm mustard, butter yellow, ochre, or cream background with subtle paper texture. No scenery, objects, text, borders, or distractions.\n\nFinal feeling: the same person lovingly redrawn as an extremely cute, warm, wholesome, nostalgic, handcrafted children’s-book character—same identity, same hair, same clothes, same accessories, completely simplified and adorable.",
+      "promptPreview": "Use the single uploaded photo as the only visual reference. Transform the person into an adorable hand-drawn 2D children’s storybook character, while keeping their identity immediately recognizable. Preserve exactly from",
+      "category": "Characters & People",
+      "styles": [
+        "Realistic",
+        "Brand",
+        "Character"
+      ],
+      "scenes": [
+        "Tech",
+        "Commerce",
+        "Social"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-522"
+    },
+    {
+      "id": 521,
+      "title": "青花敦煌刺绣四拼风格海报",
+      "image": "/images/case521.jpg",
+      "imageAlt": "青花敦煌刺绣四拼风格海报",
+      "sourceLabel": "@zhidawang219555",
+      "sourceUrl": "https://x.com/zhidawang219555/status/2090310144190218272",
+      "prompt": "请将我上传的照片制作成一张竖版拼图海报，整体采用 3:4 竖版构图。画面从上到下严格四等分为四个横向区域，每个区域的高度必须精确控制为整体画面高度的25%（四层比例严格为1:1:1:1，不允许出现比例偏差），区域之间无缝衔接，不设分隔线、不留间隙，顺序为：原图→风格1→风格2→风格3。由于每层为约3:1的极扁宽幅比例，各层主体建议横向居中排布，强调左右开阔留白与呼吸感，避免元素纵向拉伸变形或贴边拥挤。四层在人物站位、场景结构、视线方向上保持连贯呼应，呈现同一画面、四种转译的整体感。风格层（第二至四层）须遵循极简原则：每层视觉元素数量压缩至最低限度，只保留1个最核心的主体符号，其余次要装饰、背景细节与陪衬元素一律省略，画面留白占比不低于60%。\n\n第一层保留原始照片的主体结构、人物真实互动关系与姿态、真实质感、自然光影与原有色彩氛围，仅进行轻微高级摄影调色，呈现杂志摄影质感，不改变人物关系与构图逻辑，并可在不改变人物关系与构图逻辑的前提下自然扩展天空、地面或环境背景，使整体更具空间感与叙事感。\n\n第二层为青花瓷绘风格：借鉴青花瓷绘画技法，以钴蓝色线条与晕染在米白底上表现人物与场景，呈现瓷器纹样的疏朗雅致感。色彩以钴蓝与米白为主的单色系。避免蓝色浓淡层次过多显杂，避免图案化装饰堆砌。\n\n第三层为敦煌壁画风格：借鉴敦煌壁画矿物重彩质感，表现古朴斑驳的美感，需简化线条与色块。背景为土黄或赭石底色，带斑驳壁画肌理感。色彩以赭石、石青、朱砂、土黄为主。避免裂纹肌理过多堆砌，避免复杂纹样装饰。\n\n第四层为刺绣锦缎风格：以刺绣针脚肌理表现人物与场景轮廓，呈现丝缎光泽与针线纹理感，图案需极简概括。背景为米白或浅灰缎面底色。色彩以2至3种柔和色搭配金线点缀。避免针脚过密显繁琐，避免金线过多显浮夸。\n\n每一层需将主体与场景统一转换为对应风格，整体表达极度克制与简化，只保留最核心的一个主体符号及其基本轮廓关系，删除一切非必要的背景元素、装饰细节与陪衬物；人物之间的关键位置关系、互动方向与姿态特征需保留，但应抽象为可识别的轮廓关系，做到“元素越少、关系越清晰”。色彩均从原图中提取归纳，每层严格控制在2-4种主色以内。四个区域的高度比例须严格保持1:1:1:1（各占25%），不可出现拼接错位或比例偏差。整体避免朋克/赛博朋克风格、写实照片质感强行叠加、卡通风格、3D渲染感、商业海报感、复杂背景堆砌、元素过多或画面拥挤、相邻两层风格雷同，以及任何文字、Logo、水印或标题。",
+      "promptPreview": "请将我上传的照片制作成一张竖版拼图海报，整体采用 3:4 竖版构图。画面从上到下严格四等分为四个横向区域，每个区域的高度必须精确控制为整体画面高度的25%（四层比例严格为1:1:1:1，不允许出现比例偏差），区域之间无缝衔接，不设分隔线、不留间隙，顺序为：原图→风格1→风格2→风格3。由于每层为约3:1的极扁宽幅比例，各层主体建议横向居中排布，强调左右开阔留白与呼吸感，避免元素纵向拉伸变形或贴边拥挤。四层在人物站位、场景结构、视线方向上",
+      "category": "Posters & Typography",
+      "styles": [
+        "Poster",
+        "Realistic",
+        "Illustration"
+      ],
+      "scenes": [
+        "Commerce",
+        "Story"
+      ],
+      "featured": false,
+      "githubUrl": "https://github.com/freestylefly/awesome-gpt-image-2/blob/main/docs/gallery-part-2.md#case-521"
+    },
     {
       "id": 520,
       "title": "月面宇航员 T 恤图形",
