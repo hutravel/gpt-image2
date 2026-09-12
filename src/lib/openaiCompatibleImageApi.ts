@@ -44,12 +44,12 @@ function createOpenAICompatiblePaths() {
   }
 }
 
-const IMAGE_API_WORKER_URL = (
+const IMAGE_API_PROXY_URL = (
   import.meta.env.VITE_IMAGE_API_PROXY_URL?.trim() ||
-  'https://jet.hutravelon.workers.dev'
+  'https://gpt-image-aqzuoonyeh.cn-hangzhou.fcapp.run'
 ).replace(/\/+$/, '')
 
-function getWorkerUpstreamBaseUrl(baseUrl: string): string {
+function getProxyUpstreamBaseUrl(baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, '')
   if (!trimmed) return trimmed
 
@@ -109,7 +109,7 @@ function normalizeImageApiPayload(value: unknown): ImageApiResponse {
 function createRequestHeaders(profile: ApiProfile, useWorkerProxy = false): Record<string, string> {
   if (useWorkerProxy) {
     return {
-      'X-Target-Base-Url': getWorkerUpstreamBaseUrl(profile.baseUrl),
+      'X-Target-Base-Url': getProxyUpstreamBaseUrl(profile.baseUrl),
       'X-Target-Api-Key': profile.apiKey,
     }
   }
@@ -591,7 +591,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile): P
 
       response = await fetch(
         useWorkerProxy
-          ? `${IMAGE_API_WORKER_URL}/v1/images/edits`
+          ? `${IMAGE_API_PROXY_URL}/v1/images/edits`
           : buildApiUrl(profile.baseUrl, paths.editPath, proxyConfig, useApiProxy),
         {
           method: 'POST',
@@ -639,7 +639,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile): P
 
       response = await fetch(
         useWorkerProxy
-          ? `${IMAGE_API_WORKER_URL}/v1/images/generations`
+          ? `${IMAGE_API_PROXY_URL}/v1/images/generations`
           : buildApiUrl(profile.baseUrl, paths.generationPath, proxyConfig, useApiProxy),
         {
           method: 'POST',

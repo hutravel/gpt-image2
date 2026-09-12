@@ -1415,7 +1415,7 @@ describe('callImageApi', () => {
     })
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://jet.hutravelon.workers.dev/v1/images/generations',
+      'https://gpt-image-aqzuoonyeh.cn-hangzhou.fcapp.run/v1/images/generations',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
