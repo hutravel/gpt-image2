@@ -123,7 +123,6 @@ export default function SettingsModal() {
   const profileMenuTriggerRef = useRef<HTMLButtonElement>(null)
   const dataTransferToastAtRef = useRef(0)
 
-  const profileImportUrlTooltipTimerRef = useRef<number | null>(null)
   const duplicateProfileTooltipTimerRef = useRef<number | null>(null)
   const settingsScrollBoundaryRef = useRef<HTMLDivElement>(null)
   const zipDownloadRouteScrollBoundaryRef = useRef<HTMLDivElement>(null)
@@ -133,7 +132,6 @@ export default function SettingsModal() {
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [profileMenuMaxHeight, setProfileMenuMaxHeight] = useState(DEFAULT_DROPDOWN_MAX_HEIGHT)
   const [showZipDownloadRouteManager, setShowZipDownloadRouteManager] = useState(false)
-  const [profileImportUrlTooltipVisible, setProfileImportUrlTooltipVisible] = useState(false)
   const [duplicateProfileTooltipVisible, setDuplicateProfileTooltipVisible] = useState(false)
   const [activeTab, setActiveTab] = useState<SettingsTab>('api')
   const [exportConfig, setExportConfig] = useState(true)
@@ -253,7 +251,6 @@ export default function SettingsModal() {
   }, [showProfileMenu, updateProfileMenuMaxHeight])
 
   useEffect(() => () => {
-    if (profileImportUrlTooltipTimerRef.current != null) window.clearTimeout(profileImportUrlTooltipTimerRef.current)
     if (duplicateProfileTooltipTimerRef.current != null) window.clearTimeout(duplicateProfileTooltipTimerRef.current)
   }, [])
 
@@ -277,13 +274,6 @@ export default function SettingsModal() {
       window.removeEventListener('touchmove', preventTouchScroll, listenerOptions)
     }
   }, [profileTouchDragPreview])
-
-  const clearProfileImportUrlTooltipTimer = () => {
-    if (profileImportUrlTooltipTimerRef.current != null) {
-      window.clearTimeout(profileImportUrlTooltipTimerRef.current)
-      profileImportUrlTooltipTimerRef.current = null
-    }
-  }
 
   const clearDuplicateProfileTooltipTimer = () => {
     if (duplicateProfileTooltipTimerRef.current != null) {
@@ -394,7 +384,6 @@ export default function SettingsModal() {
 
   const confirmCopyProfileImportUrl = (profile: ApiProfile) => {
     setShowProfileMenu(false)
-    setProfileImportUrlTooltipVisible(false)
     setCopyImportUrlProfile(profile)
     setCopyImportUrlOptions(readCopyImportUrlOptions())
   }
@@ -842,32 +831,6 @@ export default function SettingsModal() {
                 <div>
                   <div className="mb-1.5 flex items-center gap-1.5">
                     <span className="block text-sm text-gray-600 dark:text-gray-300">当前配置</span>
-                    <span className="relative inline-flex">
-                      <button
-                        type="button"
-                        onClick={() => confirmCopyProfileImportUrl(activeProfile)}
-                        onMouseEnter={() => setProfileImportUrlTooltipVisible(true)}
-                        onMouseLeave={() => setProfileImportUrlTooltipVisible(false)}
-                        onFocus={() => setProfileImportUrlTooltipVisible(true)}
-                        onBlur={() => setProfileImportUrlTooltipVisible(false)}
-                        onTouchStart={() => {
-                          clearProfileImportUrlTooltipTimer()
-                          profileImportUrlTooltipTimerRef.current = window.setTimeout(() => {
-                            setProfileImportUrlTooltipVisible(true)
-                            profileImportUrlTooltipTimerRef.current = null
-                          }, 450)
-                        }}
-                        onTouchEnd={clearProfileImportUrlTooltipTimer}
-                        onTouchCancel={clearProfileImportUrlTooltipTimer}
-                        className="flex h-5 w-5 items-center justify-center rounded-md text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/[0.08] dark:hover:text-gray-200"
-                        aria-label={`复制导入配置「${activeProfile.name}」的 URL`}
-                      >
-                        <LinkIcon className="h-3.5 w-3.5" />
-                      </button>
-                      <ViewportTooltip visible={profileImportUrlTooltipVisible} className="whitespace-nowrap">
-                        复制导入 URL
-                      </ViewportTooltip>
-                    </span>
                     {!presetConfigOnly && <span className="relative inline-flex">
                       <button
                         type="button"
