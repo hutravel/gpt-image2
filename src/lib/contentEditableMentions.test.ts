@@ -5,6 +5,7 @@ import {
   getContentEditableCursor,
   getContentEditablePlainText,
   getContentEditableSelection,
+  getImageMentionTagHtml,
   getMentionTagHtml,
   setContentEditableCursor,
   setContentEditableSelection,
@@ -33,6 +34,23 @@ describe('contentEditable mentions', () => {
       setContentEditableCursor(el, offset)
       expect(getContentEditableCursor(el)).toBe(offset)
     }
+  })
+
+  it('keeps thumbnail mentions atomic while preserving image identity and prompt markers', () => {
+    const el = document.createElement('div')
+    el.contentEditable = 'true'
+    el.innerHTML = '前' + getImageMentionTagHtml({ id: 'image<&"', dataUrl: 'data:image/png;base64,AA==' }, 0) + '后'
+    document.body.append(el)
+
+    expect(el.querySelector<HTMLElement>('.mention-image-tag')?.dataset.imageId).toBe('image<&"')
+    expect(el.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AA==')
+    expect(getContentEditablePlainText(el)).toBe('前\u2063@图1\u2064后')
+    for (const offset of [0, 1, 4, 5]) {
+      setContentEditableCursor(el, offset)
+      expect(getContentEditableCursor(el)).toBe(offset)
+    }
+    setContentEditableSelection(el, 2, 3)
+    expect(getContentEditableSelection(el)).toEqual({ start: 1, end: 4 })
   })
 
   it('expands a selection inside a mention to the whole mention', () => {

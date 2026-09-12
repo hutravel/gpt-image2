@@ -3,15 +3,13 @@
 export type ApiMode = 'images' | 'responses'
 export const REASONING_EFFORT_VALUES = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 export type ReasoningEffort = typeof REASONING_EFFORT_VALUES[number]
-export type AppMode = 'gallery' | 'agent'
-export type AgentApiConfigMode = 'off' | 'native' | 'hybrid'
+export type AppMode = 'gallery' | 'square'
 export const ZIP_DOWNLOAD_ROUTE_VALUES = [
   'task-selection',
   'favorite-collection-selection',
   'image-context-menu-all',
   'task-detail-all',
   'task-detail-partial',
-  'agent-round-all',
 ] as const
 export type ZipDownloadRoute = typeof ZIP_DOWNLOAD_ROUTE_VALUES[number]
 export const DEFAULT_ZIP_DOWNLOAD_ROUTES: ZipDownloadRoute[] = ['task-selection', 'favorite-collection-selection']
@@ -19,7 +17,6 @@ export type BuiltInApiProvider = 'openai' | 'sb2api-async' | 'fal'
 export type ApiProvider = BuiltInApiProvider | string
 export type CustomProviderTemplate = 'http-image'
 export const DEFAULT_STREAM_PARTIAL_IMAGES = 1
-export const DEFAULT_AGENT_MAX_TOOL_ROUNDS = 15
 
 export type CustomProviderRequestMethod = 'GET' | 'POST'
 export type CustomProviderContentType = 'json' | 'multipart'
@@ -86,10 +83,11 @@ export interface ApiProfile {
   codexCli: boolean
   apiProxy: boolean
   responseFormatB64Json?: boolean
+  responseFormatUrl?: boolean
   streamImages?: boolean
   streamPartialImages?: number
   transparentBackgroundMethod: 'api' | 'local'
-  providerDrafts?: Partial<Record<ApiProvider, Partial<Pick<ApiProfile, 'baseUrl' | 'model' | 'imageGenerationModel' | 'apiMode' | 'reasoningEffort' | 'codexCli' | 'apiProxy' | 'responseFormatB64Json' | 'streamImages' | 'streamPartialImages' | 'transparentBackgroundMethod'>>>>
+  providerDrafts?: Partial<Record<ApiProvider, Partial<Pick<ApiProfile, 'baseUrl' | 'model' | 'imageGenerationModel' | 'apiMode' | 'reasoningEffort' | 'codexCli' | 'apiProxy' | 'responseFormatB64Json' | 'responseFormatUrl' | 'streamImages' | 'streamPartialImages' | 'transparentBackgroundMethod'>>>>
 }
 
 export interface AppSettings {
@@ -113,13 +111,7 @@ export interface AppSettings {
   taskCompletionNotification: boolean
   enterSubmit: boolean
   zipDownloadRoutes: ZipDownloadRoute[]
-  agentScrollToBottomAfterSubmit: boolean
-  agentMaxToolRounds: number
-  agentWebSearch: boolean
-  agentMathFormattingPrompt: boolean
-  agentApiConfigMode: AgentApiConfigMode
-  agentTextProfileId?: string | null
-  agentImageProfileId?: string | null
+  referenceImageEditAction?: 'ask' | 'replace-reference' | 'add-mask'
   profiles: ApiProfile[]
   activeProfileId: string
 }
@@ -161,7 +153,7 @@ export interface MaskDraft {
   updatedAt: number
 }
 
-export interface AgentInputDraft {
+export interface InputDraft {
   prompt: string
   inputImages: InputImage[]
   maskDraft: MaskDraft | null
@@ -233,22 +225,8 @@ export interface TaskRecord {
   isFavorite?: boolean
   /** 所属收藏夹 ID 列表 */
   favoriteCollectionIds?: string[]
-  /** 来源模式：画廊 / Agent */
-  sourceMode?: AppMode
-  /** Agent 对话 ID */
-  agentConversationId?: string
-  /** Agent 轮次 ID */
-  agentRoundId?: string
-  /** Agent 消息 ID */
-  agentMessageId?: string
-  /** Agent 图像工具调用 ID */
-  agentToolCallId?: string
-  /** Agent 批量图像工具调用 ID */
-  agentBatchCallId?: string
-  /** Agent 批量图像工具中的稳定条目 ID */
-  agentBatchItemId?: string
-  /** Agent 图像工具实际动作 */
-  agentToolAction?: 'generate' | 'edit' | 'auto' | string
+  /** 历史数据可能包含已移除模式的来源标记，读取时原样保留。 */
+  sourceMode?: AppMode | 'agent'
 }
 
 export interface FavoriteCollection {
@@ -256,52 +234,6 @@ export interface FavoriteCollection {
   name: string
   createdAt: number
   updatedAt: number
-}
-
-// ===== Agent 模式 =====
-
-export type AgentMessageRole = 'user' | 'assistant'
-export type AgentRoundStatus = 'running' | 'done' | 'error'
-
-export interface AgentMessage {
-  id: string
-  role: AgentMessageRole
-  content: string
-  roundId: string
-  inputImageIds?: string[]
-  maskTargetImageId?: string | null
-  maskImageId?: string | null
-  outputTaskIds?: string[]
-  createdAt: number
-}
-
-export interface AgentRound {
-  id: string
-  index: number
-  parentRoundId?: string | null
-  userMessageId: string
-  assistantMessageId?: string
-  prompt: string
-  inputImageIds: string[]
-  maskTargetImageId?: string | null
-  maskImageId?: string | null
-  outputTaskIds: string[]
-  responseId?: string
-  responseOutput?: ResponsesOutputItem[]
-  status: AgentRoundStatus
-  error: string | null
-  createdAt: number
-  finishedAt: number | null
-}
-
-export interface AgentConversation {
-  id: string
-  title: string
-  activeRoundId?: string | null
-  createdAt: number
-  updatedAt: number
-  rounds: AgentRound[]
-  messages: AgentMessage[]
 }
 
 // ===== IndexedDB 存储的图片 =====
@@ -458,7 +390,6 @@ export interface ExportData {
   tasks?: TaskRecord[]
   favoriteCollections?: FavoriteCollection[]
   defaultFavoriteCollectionId?: string | null
-  agentConversations?: AgentConversation[]
   /** imageId → 图片信息 */
   imageFiles?: Record<string, {
     path: string

@@ -44,6 +44,26 @@ function createOpenAICompatiblePaths() {
   }
 }
 
+const IMAGE_API_WORKER_URL = (
+  import.meta.env.VITE_IMAGE_API_PROXY_URL?.trim() ||
+  'https://jet.hutravelon.workers.dev'
+).replace(/\/+$/, '')
+
+function getWorkerUpstreamBaseUrl(baseUrl: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '')
+  if (!trimmed) return trimmed
+
+  try {
+    const url = new URL(trimmed)
+    if (url.pathname === '/v1' || url.pathname.endsWith('/v1')) {
+      url.pathname = url.pathname.slice(0, -3) || '/'
+    }
+    return url.toString().replace(/\/+$/, '')
+  } catch {
+    return trimmed.replace(/\/v1$/, '')
+  }
+}
+
 function getByPath(source: unknown, path: string | undefined): unknown {
   if (!path) return source
   return path.split('.').filter(Boolean).reduce<unknown>((current, key) => {
@@ -86,7 +106,14 @@ function normalizeImageApiPayload(value: unknown): ImageApiResponse {
   return { data: [] }
 }
 
-function createRequestHeaders(profile: ApiProfile): Record<string, string> {
+function createRequestHeaders(profile: ApiProfile, useWorkerProxy = false): Record<string, string> {
+  if (useWorkerProxy) {
+    return {
+      'X-Target-Base-Url': getWorkerUpstreamBaseUrl(profile.baseUrl),
+      'X-Target-Api-Key': profile.apiKey,
+    }
+  }
+
   return {
     Authorization: `Bearer ${profile.apiKey}`,
   }
@@ -491,7 +518,8 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile): P
   const mime = MIME_MAP[params.output_format] || 'image/png'
   const proxyConfig = readClientDevProxyConfig()
   const useApiProxy = shouldUseApiProxy(profile.apiProxy, proxyConfig)
-  const requestHeaders = createRequestHeaders(profile)
+  const useWorkerProxy = !useApiProxy && profile.provider === 'openai' && profile.apiMode === 'images'
+  const requestHeaders = createRequestHeaders(profile, useWorkerProxy)
   const paths = createOpenAICompatiblePaths()
 
   const controller = new AbortController()
@@ -525,6 +553,8 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile): P
       }
       if (profile.responseFormatB64Json) {
         formData.append('response_format', 'b64_json')
+      } else if (profile.responseFormatUrl) {
+        formData.append('response_format', 'url')
       }
       if (profile.streamImages) {
         formData.append('stream', 'true')
@@ -559,13 +589,18 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile): P
         formData.append('mask', maskBlob, 'mask.png')
       }
 
-      response = await fetch(buildApiUrl(profile.baseUrl, paths.editPath, proxyConfig, useApiProxy), {
-        method: 'POST',
-        headers: requestHeaders,
-        cache: 'no-store',
-        body: formData,
-        signal: controller.signal,
-      })
+      response = await fetch(
+        useWorkerProxy
+          ? `${IMAGE_API_WORKER_URL}/v1/images/edits`
+          : buildApiUrl(profile.baseUrl, paths.editPath, proxyConfig, useApiProxy),
+        {
+          method: 'POST',
+          headers: requestHeaders,
+          cache: 'no-store',
+          body: formData,
+          signal: controller.signal,
+        },
+      )
     } else {
       const body: Record<string, unknown> = {
         model: profile.model,
@@ -594,22 +629,29 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile): P
       }
       if (profile.responseFormatB64Json) {
         body.response_format = 'b64_json'
+      } else if (profile.responseFormatUrl) {
+        body.response_format = 'url'
       }
       if (profile.streamImages) {
         body.stream = true
         body.partial_images = getStreamPartialImages(profile)
       }
 
-      response = await fetch(buildApiUrl(profile.baseUrl, paths.generationPath, proxyConfig, useApiProxy), {
-        method: 'POST',
-        headers: {
-          ...requestHeaders,
-          'Content-Type': 'application/json',
+      response = await fetch(
+        useWorkerProxy
+          ? `${IMAGE_API_WORKER_URL}/v1/images/generations`
+          : buildApiUrl(profile.baseUrl, paths.generationPath, proxyConfig, useApiProxy),
+        {
+          method: 'POST',
+          headers: {
+            ...requestHeaders,
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+          body: JSON.stringify(body),
+          signal: controller.signal,
         },
-        cache: 'no-store',
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      })
+      )
     }
 
     if (!response.ok) {
@@ -807,6 +849,8 @@ async function submitCustomRequest(mapping: CustomProviderSubmitMapping, opts: C
       const formData = await createCustomMultipartBody(mapping, opts, context)
       if (profile.responseFormatB64Json) {
         formData.append('response_format', 'b64_json')
+      } else if (profile.responseFormatUrl) {
+        formData.append('response_format', 'url')
       }
       body = formData
     } else {
@@ -816,8 +860,8 @@ async function submitCustomRequest(mapping: CustomProviderSubmitMapping, opts: C
       )
       headers['Content-Type'] = 'application/json'
       const resolved = resolveTemplateValue(mapping.body ?? {}, context)
-      if (profile.responseFormatB64Json && resolved && typeof resolved === 'object' && !Array.isArray(resolved)) {
-        (resolved as Record<string, unknown>).response_format = 'b64_json'
+      if ((profile.responseFormatB64Json || profile.responseFormatUrl) && resolved && typeof resolved === 'object' && !Array.isArray(resolved)) {
+        (resolved as Record<string, unknown>).response_format = profile.responseFormatB64Json ? 'b64_json' : 'url'
       }
       body = JSON.stringify(resolved)
     }

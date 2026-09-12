@@ -1644,17 +1644,7 @@ describe('custom providers', () => {
     expect(profile.baseUrl).toBe('')
   })
 
-  it('enables Agent submit auto scroll by default', () => {
-    expect(DEFAULT_SETTINGS.agentScrollToBottomAfterSubmit).toBe(true)
-    expect(normalizeSettings({}).agentScrollToBottomAfterSubmit).toBe(true)
-    expect(normalizeSettings({ agentScrollToBottomAfterSubmit: false }).agentScrollToBottomAfterSubmit).toBe(false)
-  })
 
-  it('enables Agent math formatting prompt by default', () => {
-    expect(DEFAULT_SETTINGS.agentMathFormattingPrompt).toBe(true)
-    expect(normalizeSettings({}).agentMathFormattingPrompt).toBe(true)
-    expect(normalizeSettings({ agentMathFormattingPrompt: false }).agentMathFormattingPrompt).toBe(false)
-  })
 
   it('disables prompt rewrite allowance by default', () => {
     expect(DEFAULT_SETTINGS.allowPromptRewrite).toBe(false)
@@ -1676,5 +1666,33 @@ describe('custom providers', () => {
     expect(restoredProfile.baseUrl).toBe('https://api.compat.example.com/v1')
     expect(restoredProfile.model).toBe('custom-openai-model')
     expect(restoredProfile.apiProxy).toBe(false)
+  })
+})
+
+
+describe('fork API configuration compatibility', () => {
+  it('defaults to gpt-image-2, Base64 and 600 seconds', () => {
+    expect(getActiveApiProfile(normalizeSettings({}))).toMatchObject({
+      model: 'gpt-image-2', timeout: 600, responseFormatB64Json: true, responseFormatUrl: false,
+    })
+  })
+
+  it('preserves explicit response choices and existing timeout/model values', () => {
+    const profile = normalizeApiProfile({
+      model: 'vendor-model', timeout: 345, responseFormatB64Json: false, responseFormatUrl: true,
+    })
+    expect(profile).toMatchObject({
+      model: 'vendor-model', timeout: 345, responseFormatB64Json: false, responseFormatUrl: true,
+    })
+    expect(normalizeApiProfile({ responseFormatB64Json: false, responseFormatUrl: false }))
+      .toMatchObject({ responseFormatB64Json: false, responseFormatUrl: false })
+    expect(normalizeApiProfile({ responseFormatB64Json: true, responseFormatUrl: true }))
+      .toMatchObject({ responseFormatB64Json: true, responseFormatUrl: false })
+  })
+
+  it('retains response settings when switching providers and back', () => {
+    const profile = createDefaultOpenAIProfile({ responseFormatB64Json: false, responseFormatUrl: true })
+    const restored = switchApiProfileProvider(switchApiProfileProvider(profile, 'fal'), 'openai')
+    expect(restored).toMatchObject({ responseFormatB64Json: false, responseFormatUrl: true })
   })
 })

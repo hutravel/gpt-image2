@@ -16,6 +16,25 @@ describe('API error hints', () => {
 })
 
 describe('callImageApi', () => {
+  it.each([
+    { responseFormatB64Json: true, responseFormatUrl: false, expected: 'b64_json' },
+    { responseFormatB64Json: false, responseFormatUrl: true, expected: 'url' },
+    { responseFormatB64Json: false, responseFormatUrl: false, expected: undefined },
+  ])('preserves the selected response format $expected', async ({ expected, ...format }) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), { headers: { 'Content-Type': 'application/json' } }))
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout')
+    const profile = createDefaultOpenAIProfile({ ...format, apiKey: 'test-key', streamImages: false })
+    await callImageApi({
+      settings: { ...DEFAULT_SETTINGS, profiles: [profile], activeProfileId: profile.id },
+      prompt: 'prompt', params: DEFAULT_PARAMS, inputImageDataUrls: [],
+    })
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    expect(body.response_format).toBe(expected)
+    expect(timeoutSpy).toHaveBeenCalledWith(expect.any(Function), 600_000)
+  })
+
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
@@ -91,10 +110,12 @@ describe('callImageApi', () => {
         ...DEFAULT_SETTINGS,
         apiKey: 'test-key',
         apiMode: 'responses',
+        model: 'gpt-image-2.5-flare',
         profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
           ...profile,
           apiMode: 'responses' as const,
-          imageGenerationModel: 'gpt-image-2.5-flare',
+          model: 'gpt-image-2.5-flare',
+          imageGenerationModel: 'old-image-model',
         })),
       },
       prompt: 'prompt',
@@ -110,7 +131,7 @@ describe('callImageApi', () => {
     })
   })
 
-  it.each([undefined, '', 'custom-image-model', DEFAULT_IMAGES_MODEL])('sends the restored Responses tool model %s without autofilling', async (imageGenerationModel) => {
+  it.each([undefined, '', 'custom-image-model', DEFAULT_IMAGES_MODEL])('uses model ID despite legacy imageGenerationModel %s', async (imageGenerationModel) => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       output: [{ type: 'image_generation_call', result: 'aW1hZ2U=' }],
     }), {
@@ -118,14 +139,14 @@ describe('callImageApi', () => {
       headers: { 'Content-Type': 'application/json' },
     }))
 
-    const profile = imageGenerationModel === DEFAULT_IMAGES_MODEL
-      ? createDefaultOpenAIProfile({ apiMode: 'responses', apiKey: 'test-key', streamImages: false })
-      : { apiMode: 'responses', apiKey: 'test-key', model: 'legacy-text-model', streamImages: false, ...(imageGenerationModel === undefined ? {} : { imageGenerationModel }) }
+    const profile = {
+      apiMode: 'responses', apiKey: 'test-key', model: 'gpt-image-2.5-sunburst', streamImages: false,
+      ...(imageGenerationModel === undefined ? {} : { imageGenerationModel }),
+    }
     const restored = normalizePersistedState({ settings: { profiles: [profile] } }, {
       settings: DEFAULT_SETTINGS,
       params: DEFAULT_PARAMS,
       dismissedCodexCliPrompts: [],
-      agentConversations: [],
       favoriteCollections: [],
       defaultFavoriteCollectionId: null,
     })!
@@ -138,8 +159,8 @@ describe('callImageApi', () => {
     })
 
     const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
-    if (imageGenerationModel) expect(body.tools[0].model).toBe(imageGenerationModel)
-    else expect(body.tools[0]).not.toHaveProperty('model')
+    expect(body.model).toBe('gpt-image-2.5-sunburst')
+    expect(body.tools[0].model).toBe('gpt-image-2.5-sunburst')
   })
 
   it('sends a GPT Image 2.5 model and xhigh quality to the Images API', async () => {
@@ -1060,7 +1081,7 @@ describe('callImageApi', () => {
     })
 
     const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
-    expect(body).toEqual({ prompt: 'prompt' })
+    expect(body).toEqual({ prompt: 'prompt', response_format: 'b64_json' })
   })
 
   it('keeps successful Codex CLI sync custom results when one request fails', async () => {
@@ -1372,7 +1393,7 @@ describe('callImageApi', () => {
     expect((init as RequestInit).cache).toBe('no-store')
   })
 
-  it('ignores stored API proxy settings when the current deployment has no proxy', async () => {
+  it('uses the hosted image proxy when the current deployment has no local proxy', async () => {
     vi.stubEnv('VITE_API_PROXY_AVAILABLE', 'false')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       data: [{ b64_json: 'aW1hZ2U=' }],
@@ -1386,7 +1407,7 @@ describe('callImageApi', () => {
         ...DEFAULT_SETTINGS,
         apiKey: 'test-key',
         apiProxy: true,
-        baseUrl: 'http://api.example.com/v1',
+        baseUrl: 'https://api.example.com/v1',
       },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
@@ -1394,8 +1415,14 @@ describe('callImageApi', () => {
     })
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://api.example.com/v1/images/generations',
-      expect.objectContaining({ method: 'POST' }),
+      'https://jet.hutravelon.workers.dev/v1/images/generations',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'X-Target-Base-Url': 'https://api.example.com',
+          'X-Target-Api-Key': 'test-key',
+        }),
+      }),
     )
   })
 
@@ -1521,7 +1548,7 @@ describe('callImageApi', () => {
 
     expect(fetchMock.mock.calls[0][0]).toBe('https://sub2api.example.com/v1/images/generations/async')
     expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toMatchObject({
-      model: 'gpt-image-2.5-sunburst',
+      model: 'gpt-image-2',
       prompt: 'prompt',
       n: 1,
     })

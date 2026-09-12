@@ -1,4 +1,5 @@
-import { getSelectedTextMentionLabel } from './promptImageMentions'
+import type { InputImage } from '../types'
+import { getImageMentionLabel, getSelectedTextMentionLabel } from './promptImageMentions'
 
 function getMentionTagTextLength(el: Element) {
   return el.textContent?.length ?? 0
@@ -162,6 +163,12 @@ function escapeHtml(text: string) {
 
 export function getMentionTagHtml(text: string) {
   return `<span contenteditable="false" class="mention-tag" data-mention-text="${escapeHtml(getSelectedTextMentionLabel(text))}">${escapeHtml(text)}</span>`
+}
+
+export function getImageMentionTagHtml(image: InputImage, imageIndex: number) {
+  const mentionText = getImageMentionLabel(imageIndex)
+  const imageLabel = `图片${imageIndex + 1}`
+  return `<span contenteditable="false" class="mention-tag mention-image-tag" data-mention-text="${escapeHtml(getSelectedTextMentionLabel(mentionText))}" data-image-id="${escapeHtml(image.id)}"><img class="mention-image-thumbnail" src="${escapeHtml(image.dataUrl)}" alt="" draggable="false"><span class="mention-image-label" data-display-label="${imageLabel}">${escapeHtml(mentionText)}</span></span>`
 }
 
 export function syncMentionTagSelection(el: HTMLElement) {

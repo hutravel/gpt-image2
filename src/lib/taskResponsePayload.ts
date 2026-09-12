@@ -1,0 +1,36 @@
+import type { ResponsesOutputItem } from '../types'
+import { normalizeResponsesOutputItems } from './responsesOutputState'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function getPersistableResponseOutputItem(item: ResponsesOutputItem): ResponsesOutputItem {
+  if (item.type !== 'image_generation_call' || item.result == null) return item
+
+  if (typeof item.result === 'string') {
+    const { result: _result, ...rest } = item
+    return rest
+  }
+
+  if (!isRecord(item.result)) return item
+  const { b64_json: _b64Json, base64: _base64, image: _image, data: _data, ...restResult } = item.result
+  if (Object.keys(restResult).length === 0) {
+    const { result: _result, ...rest } = item
+    return rest
+  }
+
+  return { ...item, result: restResult }
+}
+
+export function getPersistableRawResponsePayload(rawResponsePayload?: string) {
+  if (!rawResponsePayload) return rawResponsePayload
+  try {
+    const payload = JSON.parse(rawResponsePayload) as { output?: unknown }
+    if (!Array.isArray(payload.output)) return rawResponsePayload
+    const output = normalizeResponsesOutputItems(payload.output).map(getPersistableResponseOutputItem)
+    return JSON.stringify({ ...payload, output }, null, 2)
+  } catch {
+    return rawResponsePayload
+  }
+}

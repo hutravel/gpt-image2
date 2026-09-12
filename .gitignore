@@ -4,3 +4,6 @@ dev-proxy.config.json
 .wrangler/
 .env.local
 .env.*.local
+.npm-cache/
+*.log
+public/data/split-prompts.js

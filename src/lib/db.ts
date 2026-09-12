@@ -1,11 +1,11 @@
-import type { AgentConversation, TaskRecord, StoredImage, StoredImageThumbnail } from '../types'
+import type { TaskRecord, StoredImage, StoredImageThumbnail } from '../types'
 
 const DB_NAME = 'gpt-image-playground'
 const DB_VERSION = 3
 const STORE_TASKS = 'tasks'
 const STORE_IMAGES = 'images'
 const STORE_THUMBNAILS = 'thumbnails'
-const STORE_AGENT_CONVERSATIONS = 'agentConversations'
+const STORE_LEGACY_CONVERSATIONS = 'agentConversations'
 const THUMBNAIL_MAX_SIZE = 720
 const THUMBNAIL_QUALITY = 0.9
 const THUMBNAIL_VERSION = 2
@@ -26,8 +26,8 @@ function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_THUMBNAILS)) {
         db.createObjectStore(STORE_THUMBNAILS, { keyPath: 'id' })
       }
-      if (!db.objectStoreNames.contains(STORE_AGENT_CONVERSATIONS)) {
-        db.createObjectStore(STORE_AGENT_CONVERSATIONS, { keyPath: 'id' })
+      if (!db.objectStoreNames.contains(STORE_LEGACY_CONVERSATIONS)) {
+        db.createObjectStore(STORE_LEGACY_CONVERSATIONS, { keyPath: 'id' })
       }
     }
     req.onsuccess = () => resolve(req.result)
@@ -66,16 +66,14 @@ export function deleteTask(id: string): Promise<undefined> {
   return dbTransaction(STORE_TASKS, 'readwrite', (s) => s.delete(id))
 }
 
-export function commitTaskDeletion(deletedTaskIds: string[], updatedTasks: TaskRecord[], updatedConversations: AgentConversation[]): Promise<undefined> {
+export function commitTaskDeletion(deletedTaskIds: string[], updatedTasks: TaskRecord[]): Promise<undefined> {
   return openDB().then(
     (db) =>
       new Promise((resolve, reject) => {
-        const tx = db.transaction([STORE_TASKS, STORE_AGENT_CONVERSATIONS], 'readwrite')
+        const tx = db.transaction(STORE_TASKS, 'readwrite')
         const taskStore = tx.objectStore(STORE_TASKS)
-        const conversationStore = tx.objectStore(STORE_AGENT_CONVERSATIONS)
         for (const id of deletedTaskIds) taskStore.delete(id)
         for (const task of updatedTasks) taskStore.put(task)
-        for (const conversation of updatedConversations) conversationStore.put(conversation)
         tx.oncomplete = () => resolve(undefined)
         tx.onerror = () => reject(tx.error)
         tx.onabort = () => reject(tx.error)
@@ -87,33 +85,35 @@ export function clearTasks(): Promise<undefined> {
   return dbTransaction(STORE_TASKS, 'readwrite', (s) => s.clear())
 }
 
-// ===== Agent conversations =====
-
-export function getAllAgentConversations(): Promise<AgentConversation[]> {
-  return dbTransaction(STORE_AGENT_CONVERSATIONS, 'readonly', (s) => s.getAll())
+// 旧会话存储保持原样，仅用于阻止清理仍被历史数据引用的图片。
+export function collectLegacyImageIds(value: unknown): string[] {
+  const ids = new Set<string>()
+  const visit = (entry: unknown) => {
+    if (!entry || typeof entry !== 'object') return
+    if (Array.isArray(entry)) {
+      entry.forEach(visit)
+      return
+    }
+    for (const [key, child] of Object.entries(entry)) {
+      if (['inputImageIds', 'outputImages', 'transparentOriginalImages', 'streamPartialImageIds'].includes(key) && Array.isArray(child)) {
+        child.forEach((id) => { if (typeof id === 'string') ids.add(id) })
+      }
+      if (['maskImageId', 'maskTargetImageId', 'targetImageId', 'maskEditorImageId'].includes(key) && typeof child === 'string') ids.add(child)
+      if (key === 'inputImages' && Array.isArray(child)) {
+        child.forEach((image) => {
+          if (image && typeof image === 'object' && typeof image.id === 'string') ids.add(image.id)
+        })
+      }
+      visit(child)
+    }
+  }
+  visit(value)
+  return [...ids]
 }
 
-export function putAgentConversation(conversation: AgentConversation): Promise<IDBValidKey> {
-  return dbTransaction(STORE_AGENT_CONVERSATIONS, 'readwrite', (s) => s.put(conversation))
-}
-
-export function clearAgentConversations(): Promise<undefined> {
-  return dbTransaction(STORE_AGENT_CONVERSATIONS, 'readwrite', (s) => s.clear())
-}
-
-export function replaceAgentConversations(conversations: AgentConversation[]): Promise<undefined> {
-  return openDB().then(
-    (db) =>
-      new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_AGENT_CONVERSATIONS, 'readwrite')
-        const store = tx.objectStore(STORE_AGENT_CONVERSATIONS)
-        store.clear()
-        for (const conversation of conversations) store.put(conversation)
-        tx.oncomplete = () => resolve(undefined)
-        tx.onerror = () => reject(tx.error)
-        tx.onabort = () => reject(tx.error)
-      }),
-  )
+export async function getLegacyProtectedImageIds(): Promise<string[]> {
+  const conversations = await dbTransaction<unknown[]>(STORE_LEGACY_CONVERSATIONS, 'readonly', (s) => s.getAll())
+  return collectLegacyImageIds(conversations)
 }
 
 // ===== Images =====

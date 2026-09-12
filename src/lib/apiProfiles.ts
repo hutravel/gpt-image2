@@ -3,7 +3,6 @@ import type {
   ApiProfile,
   ApiProvider,
   AppSettings,
-  AgentApiConfigMode,
   CustomProviderContentType,
   CustomProviderDefinition,
   CustomProviderFileMapping,
@@ -13,7 +12,7 @@ import type {
   CustomProviderSubmitMapping,
   CustomProviderTemplate,
 } from '../types'
-import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_STREAM_PARTIAL_IMAGES, DEFAULT_ZIP_DOWNLOAD_ROUTES, ZIP_DOWNLOAD_ROUTE_VALUES } from '../types'
+import { DEFAULT_STREAM_PARTIAL_IMAGES, DEFAULT_ZIP_DOWNLOAD_ROUTES, ZIP_DOWNLOAD_ROUTE_VALUES } from '../types'
 import { customProviderSupportsNativeTransparentBackground } from './customProviderCapabilities'
 import { shouldUseApiProxy } from './devProxy'
 import { normalizeReasoningEffort, normalizeStreamPartialImages, parseDefaultApiUrl } from './defaultApiUrl'
@@ -105,13 +104,6 @@ function getDefaultStreamImages(provider: ApiProvider, apiMode: ApiMode): boolea
 
 export { normalizeReasoningEffort, normalizeStreamPartialImages } from './defaultApiUrl'
 
-export function normalizeAgentMaxToolRounds(value: unknown, fallback: number | undefined = DEFAULT_AGENT_MAX_TOOL_ROUNDS): number {
-  const fallbackValue = fallback ?? DEFAULT_AGENT_MAX_TOOL_ROUNDS
-  const numeric = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(numeric)) return fallbackValue
-  return Math.min(50, Math.max(1, Math.trunc(numeric)))
-}
-
 export function hasDefaultPresetConfig(): boolean {
   return Boolean(RAW_DEFAULT_API_URL) || DEFAULT_OPENAI_API_PROXY
 }
@@ -140,14 +132,6 @@ function normalizeProviderOrder(value: unknown, customProviders: CustomProviderD
     .filter((id, idx, list) => knownIds.has(id) && list.indexOf(id) === idx)
 
   return [...ordered, ...providerIds.filter((id) => !ordered.includes(id))]
-}
-
-function normalizeAgentApiConfigMode(value: unknown): AgentApiConfigMode {
-  return value === 'native' || value === 'hybrid' ? value : 'off'
-}
-
-export function isAgentTextApiProfile(profile: ApiProfile): boolean {
-  return profile.provider === 'openai' && profile.apiMode === 'responses'
 }
 
 function isCustomProviderTemplate(value: unknown): value is CustomProviderTemplate {
@@ -367,6 +351,8 @@ export function createDefaultOpenAIProfile(overrides: Partial<ApiProfile> = {}):
     model: DEFAULT_API_URL_PATCH?.model ?? (apiMode === 'responses' ? DEFAULT_RESPONSES_MODEL : DEFAULT_IMAGES_MODEL),
     imageGenerationModel: DEFAULT_API_URL_PATCH?.imageGenerationModel ?? DEFAULT_IMAGES_MODEL,
     timeout: DEFAULT_API_TIMEOUT,
+    responseFormatB64Json: true,
+    responseFormatUrl: false,
     reasoningEffort: DEFAULT_API_URL_PATCH?.reasoningEffort,
     codexCli: DEFAULT_API_URL_PATCH?.codexCli ?? false,
     apiProxy: DEFAULT_OPENAI_API_PROXY,
@@ -388,6 +374,8 @@ export function createDefaultFalProfile(overrides: Partial<ApiProfile> = {}): Ap
     model: DEFAULT_FAL_MODEL,
     imageGenerationModel: DEFAULT_IMAGES_MODEL,
     timeout: DEFAULT_API_TIMEOUT,
+    responseFormatB64Json: true,
+    responseFormatUrl: false,
     apiMode: 'images',
     codexCli: false,
     apiProxy: false,
@@ -410,6 +398,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
       codexCli: profile.codexCli,
       apiProxy: profile.apiProxy,
       responseFormatB64Json: profile.responseFormatB64Json,
+      responseFormatUrl: profile.responseFormatUrl,
       streamImages: profile.streamImages,
       streamPartialImages: profile.streamPartialImages,
       transparentBackgroundMethod: profile.transparentBackgroundMethod,
@@ -428,7 +417,8 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
       reasoningEffort: savedDraft?.reasoningEffort,
       codexCli: false,
       apiProxy: false,
-      responseFormatB64Json: savedDraft?.responseFormatB64Json,
+      responseFormatB64Json: savedDraft?.responseFormatB64Json ?? !savedDraft?.responseFormatUrl,
+      responseFormatUrl: savedDraft?.responseFormatUrl ?? false,
       streamImages: false,
       streamPartialImages: savedDraft?.streamPartialImages ?? DEFAULT_STREAM_PARTIAL_IMAGES,
       transparentBackgroundMethod: savedDraft?.transparentBackgroundMethod ?? 'api',
@@ -449,7 +439,8 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
       reasoningEffort: savedDraft?.reasoningEffort,
       codexCli: savedDraft?.codexCli ?? false,
       apiProxy: false,
-      responseFormatB64Json: savedDraft?.responseFormatB64Json,
+      responseFormatB64Json: savedDraft?.responseFormatB64Json ?? !savedDraft?.responseFormatUrl,
+      responseFormatUrl: savedDraft?.responseFormatUrl ?? false,
       streamImages: false,
       streamPartialImages: savedDraft?.streamPartialImages ?? DEFAULT_STREAM_PARTIAL_IMAGES,
       transparentBackgroundMethod: supportsNativeTransparentBackground ? savedDraft?.transparentBackgroundMethod ?? 'api' : 'local',
@@ -475,7 +466,8 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
     reasoningEffort: savedDraft?.reasoningEffort ?? profile.reasoningEffort,
     codexCli: savedDraft?.codexCli ?? profile.codexCli,
     apiProxy: savedDraft?.apiProxy ?? DEFAULT_OPENAI_API_PROXY,
-    responseFormatB64Json: savedDraft?.responseFormatB64Json,
+    responseFormatB64Json: savedDraft?.responseFormatB64Json ?? !savedDraft?.responseFormatUrl,
+    responseFormatUrl: savedDraft?.responseFormatUrl ?? false,
     streamImages: nextStreamImages,
     streamPartialImages: nextStreamPartialImages,
     transparentBackgroundMethod: savedDraft?.transparentBackgroundMethod ?? 'api',
@@ -512,7 +504,8 @@ function normalizeProviderDraft(
     reasoningEffort: normalizeReasoningEffort(input.reasoningEffort),
     codexCli: typeof input.codexCli === 'boolean' ? input.codexCli : fallback.codexCli,
     apiProxy: typeof input.apiProxy === 'boolean' ? input.apiProxy : fallback.apiProxy,
-    responseFormatB64Json: input.responseFormatB64Json === true ? true : undefined,
+    responseFormatB64Json: typeof input.responseFormatB64Json === 'boolean' ? input.responseFormatB64Json : input.responseFormatUrl !== true,
+    responseFormatUrl: input.responseFormatUrl === true && input.responseFormatB64Json !== true,
     streamImages: typeof input.streamImages === 'boolean' ? input.streamImages : fallback.streamImages,
     streamPartialImages: normalizeStreamPartialImages(input.streamPartialImages, fallback.streamPartialImages),
     transparentBackgroundMethod: !nativeTransparentBackgroundUnavailable && (input.transparentBackgroundMethod === 'api' || input.transparentBackgroundMethod === 'local')
@@ -574,7 +567,8 @@ export function normalizeApiProfile(
     reasoningEffort: normalizeReasoningEffort(record.reasoningEffort, defaults.reasoningEffort),
     codexCli: Boolean(record.codexCli),
     apiProxy: provider === 'sb2api-async' ? false : typeof record.apiProxy === 'boolean' ? record.apiProxy : defaults.apiProxy,
-    responseFormatB64Json: record.responseFormatB64Json === true ? true : undefined,
+    responseFormatB64Json: typeof record.responseFormatB64Json === 'boolean' ? record.responseFormatB64Json : record.responseFormatUrl !== true,
+    responseFormatUrl: record.responseFormatUrl === true && record.responseFormatB64Json !== true,
     streamImages,
     streamPartialImages: normalizeStreamPartialImages(record.streamPartialImages, defaults.streamPartialImages),
     transparentBackgroundMethod: !nativeTransparentBackgroundUnavailable && (record.transparentBackgroundMethod === 'api' || record.transparentBackgroundMethod === 'local')
@@ -675,7 +669,8 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     apiMode: legacyApiMode,
     codexCli: Boolean(record.codexCli),
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : DEFAULT_OPENAI_API_PROXY,
-    responseFormatB64Json: record.responseFormatB64Json === true ? true : undefined,
+    responseFormatB64Json: typeof record.responseFormatB64Json === 'boolean' ? record.responseFormatB64Json : record.responseFormatUrl !== true,
+    responseFormatUrl: record.responseFormatUrl === true && record.responseFormatB64Json !== true,
     streamImages: typeof record.streamImages === 'boolean' ? record.streamImages : undefined,
     streamPartialImages: normalizeStreamPartialImages(record.streamPartialImages),
   })
@@ -695,14 +690,6 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     ? record.activeProfileId
     : profiles[0].id
   const active = profiles.find((p) => p.id === activeProfileId) ?? profiles[0]
-  const agentApiConfigMode = normalizeAgentApiConfigMode(record.agentApiConfigMode)
-  const firstAgentTextProfile = profiles.find(isAgentTextApiProfile)
-  const agentTextProfileId = typeof record.agentTextProfileId === 'string' && profiles.some((p) => p.id === record.agentTextProfileId && isAgentTextApiProfile(p))
-    ? record.agentTextProfileId
-    : (isAgentTextApiProfile(active) ? active.id : firstAgentTextProfile?.id ?? null)
-  const agentImageProfileId = typeof record.agentImageProfileId === 'string' && profiles.some((p) => p.id === record.agentImageProfileId)
-    ? record.agentImageProfileId
-    : active.id
 
   return {
     baseUrl: active.baseUrl,
@@ -723,29 +710,13 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     allowPromptRewrite: typeof record.allowPromptRewrite === 'boolean' ? record.allowPromptRewrite : false,
     taskCompletionNotification: typeof record.taskCompletionNotification === 'boolean' ? record.taskCompletionNotification : false,
     enterSubmit: typeof record.enterSubmit === 'boolean' ? record.enterSubmit : false,
+    referenceImageEditAction: record.referenceImageEditAction === 'replace-reference' || record.referenceImageEditAction === 'add-mask'
+      ? record.referenceImageEditAction
+      : 'ask',
     zipDownloadRoutes: normalizeZipDownloadRoutes(record.zipDownloadRoutes),
-    agentScrollToBottomAfterSubmit: typeof record.agentScrollToBottomAfterSubmit === 'boolean' ? record.agentScrollToBottomAfterSubmit : true,
-    agentMaxToolRounds: normalizeAgentMaxToolRounds(record.agentMaxToolRounds),
-    agentWebSearch: typeof record.agentWebSearch === 'boolean' ? record.agentWebSearch : false,
-    agentMathFormattingPrompt: typeof record.agentMathFormattingPrompt === 'boolean' ? record.agentMathFormattingPrompt : true,
-    agentApiConfigMode,
-    agentTextProfileId,
-    agentImageProfileId,
     profiles,
     activeProfileId,
   }
-}
-
-export function getAgentTextApiProfile(settings: Partial<AppSettings> | unknown): ApiProfile | null {
-  const normalized = normalizeSettings(settings)
-  if (normalized.agentApiConfigMode === 'off') return getActiveApiProfile(normalized)
-  return normalized.profiles.find((profile) => profile.id === normalized.agentTextProfileId) ?? null
-}
-
-export function getAgentImageApiProfile(settings: Partial<AppSettings> | unknown): ApiProfile | null {
-  const normalized = normalizeSettings(settings)
-  if (normalized.agentApiConfigMode !== 'hybrid') return getAgentTextApiProfile(normalized)
-  return normalized.profiles.find((profile) => profile.id === normalized.agentImageProfileId) ?? null
 }
 
 export function getCustomProviderDefinition(settings: Partial<AppSettings> | unknown, provider: ApiProvider): CustomProviderDefinition | null {
@@ -1079,6 +1050,7 @@ const PRESET_PROFILE_DEPLOYMENT_KEYS = [
   'codexCli',
   'apiProxy',
   'responseFormatB64Json',
+  'responseFormatUrl',
   'streamImages',
   'streamPartialImages',
   'transparentBackgroundMethod',
@@ -1250,11 +1222,4 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   taskCompletionNotification: false,
   enterSubmit: false,
   zipDownloadRoutes: DEFAULT_ZIP_DOWNLOAD_ROUTES,
-  agentScrollToBottomAfterSubmit: true,
-  agentMaxToolRounds: DEFAULT_AGENT_MAX_TOOL_ROUNDS,
-  agentWebSearch: false,
-  agentMathFormattingPrompt: true,
-  agentApiConfigMode: 'off',
-  agentTextProfileId: null,
-  agentImageProfileId: null,
 })

@@ -1,19 +1,17 @@
 import { useRef, useEffect, useCallback, useState, useMemo, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { deleteFavoriteCollection, useStore, submitTask, submitAgentMessage, stopAgentResponse, addImageFromFile, removeMultipleTasks, taskMatchesFilterStatus, taskMatchesSearchQuery } from '../store'
-import { DEFAULT_PARAMS, type TaskRecord } from '../types'
-import { getActiveAgentRounds } from '../lib/agentConversationState'
-import { getActiveApiProfile, getAgentImageApiProfile, normalizeSettings } from '../lib/apiProfiles'
+import { deleteFavoriteCollection, useStore, submitTask, createInputImageFromFile, deleteImageIfUnreferenced, addImageFromFile, removeMultipleTasks, taskMatchesFilterStatus, taskMatchesSearchQuery } from '../store'
+import { DEFAULT_PARAMS, type InputImage, type TaskRecord } from '../types'
+import { getActiveApiProfile, normalizeSettings } from '../lib/apiProfiles'
 import { getImageGenerationModel, isGptImage25Model } from '../lib/imageModels'
-import { ensureImageCached, getCachedImage } from '../lib/imageCache'
+import { ensureImageCached } from '../lib/imageCache'
 import { DEFAULT_FAL_IMAGE_SIZE, getChangedParams, getOutputImageLimitForSettings, normalizeParamsForSettings } from '../lib/paramCompatibility'
-import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
+import { getAtImageQuery, getImageMentionLabel, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, imageMentionMatches, insertImageMentionAtVisibleRange, isCursorInSelectedImageMention, stripImageMentionMarkers } from '../lib/promptImageMentions'
 import { normalizeCodexCliImageSize, normalizeImageSize } from '../lib/size'
 import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { getSafeBoundingClientRect } from '../lib/domRect'
-import { collectAgentRoundOutputImageSlots } from '../lib/agentImageReferences'
 import { ALL_FAVORITES_COLLECTION_ID, getTaskFavoriteCollectionIds } from '../lib/favoriteState'
-import { getContentEditableCursor, getContentEditablePlainText, getContentEditableSelection, getMentionTagHtml, setContentEditableCursor, setContentEditableSelection, syncMentionTagSelection } from '../lib/contentEditableMentions'
+import { getContentEditableCursor, getContentEditablePlainText, getContentEditableSelection, getImageMentionTagHtml, getMentionTagHtml, setContentEditableCursor, setContentEditableSelection, syncMentionTagSelection } from '../lib/contentEditableMentions'
 import { useHintTooltip } from '../hooks/useHintTooltip'
 import { downloadImageEntriesAsZip, downloadImageIds, formatExportFileTime, getTaskOutputImageZipEntries } from '../lib/downloadImages'
 import SizePickerModal from './SizePickerModal'
@@ -46,39 +44,12 @@ function useIsMobile() {
   return isMobile
 }
 
-type AtImageOption =
-  | { type: 'input'; key: string; label: string; imageId: string; dataUrl: string; imageIndex: number }
-  | { type: 'agent-output'; key: string; label: string; imageId: string; insertText: string }
-
-function agentImageMentionMatches(query: string, label: string) {
-  const normalized = query.trim().toLowerCase()
-  if (!normalized) return true
-  const normalizedLabel = label.toLowerCase()
-  return normalizedLabel.includes(normalized) || normalizedLabel.replace(/^@/, '').includes(normalized)
-}
+type AtImageOption = { type: 'input'; key: string; label: string; imageId: string; dataUrl: string; imageIndex: number }
 
 function AtImageOptionThumb({ option }: { option: AtImageOption }) {
-  const [src, setSrc] = useState(option.type === 'input' ? option.dataUrl : getCachedImage(option.imageId) || '')
-
-  useEffect(() => {
-    if (option.type === 'input') {
-      setSrc(option.dataUrl)
-      return
-    }
-
-    let cancelled = false
-    setSrc(getCachedImage(option.imageId) || '')
-    ensureImageCached(option.imageId).then((url) => {
-      if (!cancelled && url) setSrc(url)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [option])
-
   return (
     <span className="h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-gray-200/70 bg-gray-100 dark:border-white/[0.08] dark:bg-white/[0.04]">
-      {src && <img src={src} className="h-full w-full object-cover" alt="" />}
+      <img src={option.dataUrl} className="h-full w-full object-cover" alt="" />
     </span>
   )
 }
@@ -89,11 +60,13 @@ export default function InputBar() {
   const setPrompt = useStore((s) => s.setPrompt)
   const inputImages = useStore((s) => s.inputImages)
   const addInputImage = useStore((s) => s.addInputImage)
+  const replaceInputImage = useStore((s) => s.replaceInputImage)
   const removeInputImage = useStore((s) => s.removeInputImage)
   const clearInputImages = useStore((s) => s.clearInputImages)
   const params = useStore((s) => s.params)
   const setParams = useStore((s) => s.setParams)
   const settings = useStore((s) => s.settings)
+  const setSettings = useStore((s) => s.setSettings)
   const reusedTaskApiProfileId = useStore((s) => s.reusedTaskApiProfileId)
   const setShowSettings = useStore((s) => s.setShowSettings)
   const setLightboxImageId = useStore((s) => s.setLightboxImageId)
@@ -108,8 +81,6 @@ export default function InputBar() {
   const tasks = useStore((s) => s.tasks)
   const favoriteCollections = useStore((s) => s.favoriteCollections)
   const defaultFavoriteCollectionId = useStore((s) => s.defaultFavoriteCollectionId)
-  const agentConversations = useStore((s) => s.agentConversations)
-  const activeAgentConversationId = useStore((s) => s.activeAgentConversationId)
   const filterStatus = useStore((s) => s.filterStatus)
   const filterFavorite = useStore((s) => s.filterFavorite)
   const activeFavoriteCollectionId = useStore((s) => s.activeFavoriteCollectionId)
@@ -307,9 +278,13 @@ export default function InputBar() {
   }, [clearFavoriteCollectionSelection, defaultFavoriteCollectionId, favoriteCollections, selectedFavoriteCollectionIds, setConfirmDialog, showToast, tasks])
 
   const maskDraft = useStore((s) => s.maskDraft)
+  const setMaskEditorImageId = useStore((s) => s.setMaskEditorImageId)
   const moveInputImage = useStore((s) => s.moveInputImage)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const replaceFileInputRef = useRef<HTMLInputElement>(null)
+  const replaceImageTargetRef = useRef<{ index: number; id: string } | null>(null)
+  const [imageMentionPreview, setImageMentionPreview] = useState<{ image: InputImage; left: number; top: number } | null>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLDivElement>(null)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -412,44 +387,26 @@ export default function InputBar() {
   const isMobile = useIsMobile()
 
   const settingsActiveProfile = useMemo(() => getActiveApiProfile(settings), [settings])
-  const currentActiveProfile = useMemo(() => (
-    appMode === 'agent'
-      ? getAgentImageApiProfile(settings) ?? settingsActiveProfile
-      : settingsActiveProfile
-  ), [appMode, settings, settingsActiveProfile])
   const activeProfile = useMemo(() => (
-    appMode !== 'agent' && settings.reuseTaskApiProfileTemporarily && reusedTaskApiProfileId
-      ? settings.profiles.find((profile) => profile.id === reusedTaskApiProfileId) ?? currentActiveProfile
-      : currentActiveProfile
-  ), [appMode, currentActiveProfile, reusedTaskApiProfileId, settings])
-  const activeAgentConversation = appMode === 'agent'
-    ? agentConversations.find((conversation) => conversation.id === activeAgentConversationId) ?? null
-    : null
-  const activeAgentIsRunning = Boolean(activeAgentConversation?.rounds.some((round) => round.status === 'running'))
+    settings.reuseTaskApiProfileTemporarily && reusedTaskApiProfileId
+      ? settings.profiles.find((profile) => profile.id === reusedTaskApiProfileId) ?? settingsActiveProfile
+      : settingsActiveProfile
+  ), [reusedTaskApiProfileId, settings, settingsActiveProfile])
   const effectiveSettings = useMemo(() => (
     activeProfile.id === settingsActiveProfile.id
       ? settings
       : normalizeSettings({ ...settings, activeProfileId: activeProfile.id })
   ), [activeProfile.id, settingsActiveProfile.id, settings])
   const hasSubmitApiConfig = Boolean(activeProfile.apiKey)
-  const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig && !activeAgentIsRunning)
-  const submitButtonAriaLabel = activeAgentIsRunning
-    ? '停止生成'
-    : hasSubmitApiConfig
+  const canSubmit = Boolean(prompt.trim() && hasSubmitApiConfig)
+  const submitButtonAriaLabel = hasSubmitApiConfig
     ? maskDraft ? '遮罩编辑' : '生成图像'
     : '请先配置 API'
-  const submitTooltipText = activeAgentIsRunning ? '停止生成' : '尚未完成 API 配置，请在右上角设置中进行'
+  const submitTooltipText = '尚未完成 API 配置，请在右上角设置中进行'
   const promptPlaceholder = '描述你想生成的图片，可输入 @ 来指定参考图...'
   const submitCurrentMode = useCallback(() => {
-    if (appMode === 'agent') {
-      void submitAgentMessage()
-    } else {
-      void submitTask()
-    }
-  }, [appMode])
-  const stopActiveAgentResponse = useCallback(() => {
-    stopAgentResponse(activeAgentConversationId)
-  }, [activeAgentConversationId])
+    void submitTask()
+  }, [])
   const syncPromptFromContentEditable = useCallback(() => {
     const el = textareaRef.current
     if (!el) return
@@ -459,9 +416,33 @@ export default function InputBar() {
     syncMentionTagSelection(el)
     setPrompt(getContentEditablePlainText(el))
   }, [setPrompt])
+  const showImageMentionPreview = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const tag = (event.target as HTMLElement).closest<HTMLElement>('.mention-image-tag')
+    if (!tag || !textareaRef.current?.contains(tag)) return
+
+    const image = inputImages.find((inputImage) => inputImage.id === tag.dataset.imageId)
+    if (!image) return
+
+    const tagRect = tag.getBoundingClientRect()
+    const previewWidth = 220
+    const previewHeight = 168
+    const previewGap = 8
+    const previewLeft = Math.min(Math.max(tagRect.left, 8), window.innerWidth - previewWidth - 8)
+    const hasSpaceAbove = tagRect.top >= previewHeight + previewGap + 8
+    const previewTop = hasSpaceAbove
+      ? tagRect.top - previewHeight - previewGap
+      : Math.min(tagRect.bottom + previewGap, window.innerHeight - previewHeight - 8)
+
+    setImageMentionPreview({ image, left: previewLeft, top: previewTop })
+  }, [inputImages])
+  const hideImageMentionPreview = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const tag = (event.target as HTMLElement).closest<HTMLElement>('.mention-image-tag')
+    const nextTag = (event.relatedTarget as HTMLElement | null)?.closest<HTMLElement>('.mention-image-tag')
+    if (tag && tag === nextTag) return
+    setImageMentionPreview(null)
+  }, [])
   const activeProvider = activeProfile.provider
   const isFalProvider = activeProvider === 'fal'
-  const agentAutoImageCount = appMode === 'agent'
   const moderationDisabled = isFalProvider
   const transparentOutputAvailable = appMode === 'gallery'
   const showTransparentOutputControl = transparentOutputAvailable && (params.output_format === 'png' || params.output_format === 'webp')
@@ -471,10 +452,8 @@ export default function InputBar() {
   const isFalTextToImage = isFalProvider && inputImages.length === 0
   const nDraftValue = Number(nInput)
   const effectiveNValue = Number.isNaN(nDraftValue) ? params.n : nDraftValue
-  const streamConcurrentByN = activeProfile.provider === 'openai' && activeProfile.streamImages === true && !agentAutoImageCount && effectiveNValue > 1
-  const nLimitHintText = agentAutoImageCount
-    ? 'Agent 模式下数量由模型根据提示词自动决定'
-    : isFalProvider
+  const streamConcurrentByN = activeProfile.provider === 'openai' && activeProfile.streamImages === true && effectiveNValue > 1
+  const nLimitHintText = isFalProvider
     ? `fal.ai 最大请求数量为 ${outputImageLimit}`
     : `OpenAI 最大请求数量为 ${outputImageLimit}`
   const displaySize = isFalTextToImage && params.size === 'auto'
@@ -513,23 +492,7 @@ export default function InputBar() {
     : inputImages
   const cursorPosition = cursorPos
   const visiblePrompt = stripImageMentionMarkers(prompt)
-  const agentOutputImageOptions = useMemo<AtImageOption[]>(() => {
-    if (!activeAgentConversation) return []
-    return getActiveAgentRounds(activeAgentConversation).flatMap((round) =>
-      collectAgentRoundOutputImageSlots(round, tasks).flatMap((imageId, imageIndex) => {
-        if (!imageId) return []
-        const label = `@第${round.index}轮图${imageIndex + 1}`
-        return {
-          type: 'agent-output' as const,
-          key: `agent-output:${round.id}:${imageIndex}:${imageId}`,
-          label,
-          imageId,
-          insertText: label,
-        }
-      }),
-    )
-  }, [activeAgentConversation, tasks])
-  const atImageSourceCount = inputImages.length + agentOutputImageOptions.length
+  const atImageSourceCount = inputImages.length
   const atImageQuery = isCursorInSelectedImageMention(prompt, cursorPosition)
     ? null
     : getAtImageQuery(visiblePrompt, cursorPosition, { length: atImageSourceCount })
@@ -545,7 +508,6 @@ export default function InputBar() {
             imageIndex: index,
           } satisfies AtImageOption))
           .filter((option) => imageMentionMatches(atImageQuery.query, option.imageIndex)),
-        ...agentOutputImageOptions.filter((option) => agentImageMentionMatches(atImageQuery.query, option.label)),
       ]
     : []
   const showAtImageMenu = !atImageMenuDismissed && atImageOptions.length > 0
@@ -562,21 +524,19 @@ export default function InputBar() {
     setAtImageMenuIndex(0)
     if (!query) return
 
-    const mentionText = option.type === 'input' ? getImageMentionLabel(option.imageIndex) : option.insertText
+    const mentionText = getImageMentionLabel(option.imageIndex)
     const nextCursor = query.start + mentionText.length
     if (el) {
       el.focus()
       setContentEditableSelection(el, query.start, cursor)
-      if (document.execCommand('insertHTML', false, getMentionTagHtml(mentionText))) {
+      if (document.execCommand('insertHTML', false, getImageMentionTagHtml(inputImages[option.imageIndex], option.imageIndex))) {
         setContentEditableCursor(el, nextCursor)
         syncPromptFromContentEditable()
         return
       }
     }
 
-    const next = option.type === 'input'
-      ? insertImageMentionAtVisibleRange(prompt, query.start, cursor, option.imageIndex)
-      : insertTextMentionAtVisibleRange(prompt, query.start, cursor, option.insertText)
+    const next = insertImageMentionAtVisibleRange(prompt, query.start, cursor, option.imageIndex)
     isUserInputRef.current = false
     setPrompt(next.prompt)
     window.setTimeout(() => {
@@ -585,7 +545,7 @@ export default function InputBar() {
         setContentEditableCursor(textareaRef.current, next.cursor)
       }
     }, 0)
-  }, [atImageSourceCount, prompt, setPrompt, syncPromptFromContentEditable])
+  }, [atImageSourceCount, inputImages, prompt, setPrompt, syncPromptFromContentEditable])
 
 
 
@@ -631,8 +591,8 @@ export default function InputBar() {
   }, [params.output_compression])
 
   useEffect(() => {
-    setNInput(agentAutoImageCount ? 'auto' : String(params.n))
-  }, [agentAutoImageCount, params.n])
+    setNInput(String(params.n))
+  }, [params.n])
 
   useEffect(() => {
     const normalizedParams = normalizeParamsForSettings(params, effectiveSettings, { hasInputImages: inputImages.length > 0 })
@@ -688,17 +648,13 @@ export default function InputBar() {
 
   const commitN = useCallback(() => {
     nLimitHint.hide()
-    if (agentAutoImageCount) {
-      setNInput('auto')
-      return
-    }
     const nextValue = Number(nInput)
     const normalizedValue =
       nInput.trim() === '' ? DEFAULT_PARAMS.n : Number.isNaN(nextValue) ? params.n : nextValue
     const clampedValue = Math.min(outputImageLimit, Math.max(1, normalizedValue))
     setNInput(String(clampedValue))
     setParams({ n: clampedValue })
-  }, [agentAutoImageCount, nInput, nLimitHint, outputImageLimit, params.n, setParams])
+  }, [nInput, nLimitHint, outputImageLimit, params.n, setParams])
 
   const showNLimitHint = useCallback(() => {
     nLimitHint.show()
@@ -708,24 +664,7 @@ export default function InputBar() {
     nLimitHint.hide()
   }, [nLimitHint])
 
-  const showAgentNHint = useCallback(() => {
-    if (agentAutoImageCount) showNLimitHint()
-  }, [agentAutoImageCount, showNLimitHint])
-
-  const clearAgentNHintTouchTimer = useCallback(() => {
-    nLimitHint.clearTimer()
-  }, [nLimitHint])
-
-  const startAgentNHintTouch = useCallback(() => {
-    if (!agentAutoImageCount) return
-    nLimitHint.startTouch()
-  }, [agentAutoImageCount, nLimitHint])
-
   const handleNInputChange = useCallback((value: string) => {
-    if (agentAutoImageCount) {
-      setNInput('auto')
-      return
-    }
     setNInput(value)
     const nextValue = Number(value)
     if (!Number.isNaN(nextValue) && nextValue > outputImageLimit) {
@@ -733,21 +672,16 @@ export default function InputBar() {
     } else {
       hideNLimitHint()
     }
-  }, [agentAutoImageCount, hideNLimitHint, outputImageLimit, showNLimitHint])
+  }, [hideNLimitHint, outputImageLimit, showNLimitHint])
 
   const handleNLimitIncreaseAttempt = useCallback((preventDefault: () => void) => {
-    if (agentAutoImageCount) {
-      preventDefault()
-      showNLimitHint()
-      return
-    }
     const currentValue = Number(nInput)
     const effectiveValue = Number.isNaN(currentValue) ? params.n : currentValue
     if (!nInputFocused || effectiveValue < outputImageLimit) return
 
     preventDefault()
     showNLimitHint()
-  }, [agentAutoImageCount, nInput, nInputFocused, outputImageLimit, params.n, showNLimitHint])
+  }, [nInput, nInputFocused, outputImageLimit, params.n, showNLimitHint])
 
   const clearImageHintTimer = () => {
     if (imageHintTimerRef.current != null) {
@@ -833,9 +767,119 @@ export default function InputBar() {
   const handleFilesRef = useRef(handleFiles)
   handleFilesRef.current = handleFiles
 
+  const openReplaceReferenceFilePicker = useCallback((idx: number, imageId: string) => {
+    replaceImageTargetRef.current = { index: idx, id: imageId }
+    replaceFileInputRef.current?.click()
+  }, [])
+
+  const commitReferenceEditChoice = useCallback((choice: 'replace-reference' | 'add-mask', remember?: boolean) => {
+    if (remember) setSettings({ referenceImageEditAction: choice })
+  }, [setSettings])
+
+  const handleEditReferenceImage = useCallback((
+    img: (typeof inputImages)[number],
+    idx: number,
+    isMaskTarget: boolean,
+    forceChoiceDialog = false,
+  ) => {
+    if (isMaskTarget) {
+      setMaskEditorImageId(img.id)
+      return
+    }
+
+    if (!forceChoiceDialog && settings.referenceImageEditAction === 'replace-reference') {
+      openReplaceReferenceFilePicker(idx, img.id)
+      return
+    }
+
+    if (!forceChoiceDialog && settings.referenceImageEditAction === 'add-mask') {
+      setMaskEditorImageId(img.id)
+      return
+    }
+
+    setConfirmDialog({
+      title: '编辑参考图',
+      message: '请选择这次要执行的操作。若不勾选下方的选项，则每次都询问；勾选后可在 **设置-习惯配置** 修改选择。',
+      checkbox: { label: '以后默认执行此选择' },
+      buttons: [
+        {
+          label: '替换参考图',
+          tone: 'secondary',
+          action: (remember) => {
+            commitReferenceEditChoice('replace-reference', remember)
+            openReplaceReferenceFilePicker(idx, img.id)
+          },
+        },
+        {
+          label: '添加遮罩',
+          tone: 'primary',
+          action: (remember) => {
+            commitReferenceEditChoice('add-mask', remember)
+            setMaskEditorImageId(img.id)
+          },
+        },
+      ],
+    })
+  }, [commitReferenceEditChoice, openReplaceReferenceFilePicker, setConfirmDialog, setMaskEditorImageId, settings.referenceImageEditAction])
+
+  useEffect(() => {
+    const openReferenceImageEditor = (event: Event) => {
+      const imageId = (event as CustomEvent<{ imageId?: string }>).detail?.imageId
+      if (!imageId) return
+
+      const imageIndex = inputImages.findIndex((image) => image.id === imageId)
+      const image = inputImages[imageIndex]
+      if (!image) return
+
+      handleEditReferenceImage(image, imageIndex, maskDraft?.targetImageId === image.id, true)
+    }
+
+    window.addEventListener('edit-reference-image', openReferenceImageEditor)
+    return () => window.removeEventListener('edit-reference-image', openReferenceImageEditor)
+  }, [handleEditReferenceImage, inputImages, maskDraft?.targetImageId])
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     await handleFilesRef.current(e.target.files || [])
     e.target.value = ''
+  }
+
+  const handleReplaceFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    const target = replaceImageTargetRef.current
+    replaceImageTargetRef.current = null
+    if (!file || !target) return
+
+    try {
+      const image = await createInputImageFromFile(file)
+      if (!image) {
+        showToast('请选择有效图片', 'error')
+        return
+      }
+
+      const currentImages = useStore.getState().inputImages
+      const currentIdx = currentImages.findIndex((item) => item.id === target.id)
+      const targetIdx = currentIdx
+      const previous = currentImages[targetIdx]
+      if (!previous) {
+        void deleteImageIfUnreferenced(image.id)
+        showToast('原参考图已不存在', 'error')
+        return
+      }
+      if (previous.id === image.id) {
+        showToast('参考图未变化', 'info')
+        return
+      }
+      if (currentImages.some((item, itemIdx) => itemIdx !== targetIdx && item.id === image.id)) {
+        showToast('这张图片已在参考图中', 'info')
+        return
+      }
+
+      replaceInputImage(targetIdx, image)
+      showToast('参考图已替换', 'success')
+    } catch (err) {
+      showToast(`参考图替换失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -975,25 +1019,26 @@ export default function InputBar() {
       }
 
       const transferredText = e.dataTransfer?.getData('text/plain')
-      
-      const imageIds = transferredText?.startsWith('agent-images:') 
-        ? transferredText.slice('agent-images:'.length).split(',') 
-        : transferredText?.startsWith('agent-image:')
-        ? [transferredText.slice('agent-image:'.length)]
-        : []
-
-      if (imageIds.length > 0) {
-        Promise.all(imageIds.map(async (imageId) => {
-          const dataUrl = await ensureImageCached(imageId)
-          if (!dataUrl) {
-            showToast('部分图片已不存在', 'error')
+      if (!transferredText?.startsWith('input-images:')) return
+      const imageIds = transferredText.slice('input-images:'.length).split(',').filter(Boolean)
+      void (async () => {
+        let added = 0
+        for (const imageId of imageIds) {
+          const current = useStore.getState().inputImages
+          if (current.some((image) => image.id === imageId)) continue
+          if (current.length >= API_MAX_IMAGES) {
+            showToast('参考图数量已达上限（16 张）', 'error')
             return
           }
+          const dataUrl = await ensureImageCached(imageId)
+          if (!dataUrl) throw new Error('部分图片已不存在')
           addInputImage({ id: imageId, dataUrl })
-        })).then(() => {
-          showToast('已上传图片', 'success')
-        }).catch((err) => showToast(`上传图片失败：${err instanceof Error ? err.message : String(err)}`, 'error'))
-      }
+          added++
+        }
+        if (added) showToast('已上传图片', 'success')
+      })().catch((error) => {
+        showToast(`上传图片失败：${error instanceof Error ? error.message : String(error)}`, 'error')
+      })
     }
 
     document.addEventListener('dragenter', handleDragEnter)
@@ -1065,7 +1110,9 @@ export default function InputBar() {
     const html = prompt
       ? parts.map((part) =>
           part.type === 'mention'
-              ? `<span contenteditable="false" class="mention-tag" data-mention-text="${part.mentionText ?? getSelectedImageMentionLabel(part.imageIndex ?? 0)}">${part.text}</span>`
+            ? part.imageIndex != null && inputImages[part.imageIndex]
+              ? getImageMentionTagHtml(inputImages[part.imageIndex], part.imageIndex)
+              : getMentionTagHtml(part.text)
             : part.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         ).join('')
       : ''
@@ -1389,7 +1436,7 @@ export default function InputBar() {
           if (el) {
             el.focus()
             setContentEditableCursor(el, cursor)
-            if (document.execCommand('insertHTML', false, getMentionTagHtml(getImageMentionLabel(idx)))) {
+            if (document.execCommand('insertHTML', false, getImageMentionTagHtml(img, idx))) {
               syncPromptFromContentEditable()
               return
             }
@@ -1447,14 +1494,13 @@ export default function InputBar() {
             className="absolute inset-0 w-full h-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer z-20 focus:outline-none border-none"
             onClick={(e) => {
               e.stopPropagation()
-              setLightboxImageId(img.id, inputImages.map((i) => i.id))
+              handleEditReferenceImage(img, idx, isMaskTarget)
             }}
-            title="查看"
-            aria-label="查看参考图"
+            title={isMaskTarget ? '编辑遮罩' : '编辑参考图'}
+            aria-label={isMaskTarget ? '编辑遮罩' : '编辑参考图'}
           >
             <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.25 12s3.5-6 9.75-6 9.75 6 9.75 6-3.5 6-9.75 6S2.25 12 2.25 12z" />
-              <circle cx="12" cy="12" r="2.75" strokeWidth={2} />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
             </svg>
           </button>
         </div>
@@ -1539,17 +1585,13 @@ export default function InputBar() {
       commitOutputCompression={commitOutputCompression}
       moderationHint={moderationHint}
       moderationDisabled={moderationDisabled}
-      agentAutoImageCount={agentAutoImageCount}
       outputImageLimit={outputImageLimit}
       nInput={nInput}
       setNInputFocused={setNInputFocused}
       commitN={commitN}
       handleNInputChange={handleNInputChange}
       handleNLimitIncreaseAttempt={handleNLimitIncreaseAttempt}
-      showAgentNHint={showAgentNHint}
       hideNLimitHint={hideNLimitHint}
-      startAgentNHintTouch={startAgentNHintTouch}
-      clearAgentNHintTouchTimer={clearAgentNHintTouchTimer}
       nLimitHint={nLimitHint}
       nLimitHintText={nLimitHintText}
       streamConcurrentByN={streamConcurrentByN}
@@ -1658,7 +1700,6 @@ export default function InputBar() {
                     >
                       <AtImageOptionThumb option={option} />
                       <span className="min-w-0 flex-1 truncate font-medium">{option.label}</span>
-                      {option.type === 'agent-output' && <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-white/[0.06] dark:text-gray-400">历史</span>}
                     </button>
                   ))}
                 </div>
@@ -1696,15 +1737,27 @@ export default function InputBar() {
               }}
               onPaste={handlePromptPaste}
               onCopy={handlePromptCopy}
+              onMouseOver={showImageMentionPreview}
+              onMouseOut={hideImageMentionPreview}
+              onMouseDown={(event) => {
+                const tag = (event.target as HTMLElement).closest<HTMLElement>('.mention-image-tag')
+                if (tag && textareaRef.current?.contains(tag)) event.preventDefault()
+              }}
               onClick={(e) => {
                 const el = textareaRef.current
                 if (!el) return
                 const target = e.target as HTMLElement
-                if (target.classList.contains('mention-tag')) {
+                const mentionTag = target.closest<HTMLElement>('.mention-tag')
+                if (mentionTag?.dataset.imageId) {
+                  setImageMentionPreview(null)
+                  setLightboxImageId(mentionTag.dataset.imageId, inputImages.map((image) => image.id))
+                  return
+                }
+                if (mentionTag) {
                   const sel = window.getSelection()
                   if (sel) {
                     const range = document.createRange()
-                    range.selectNode(target)
+                    range.selectNode(mentionTag)
                     sel.removeAllRanges()
                     sel.addRange(range)
                     syncMentionTagSelection(el)
@@ -1717,11 +1770,42 @@ export default function InputBar() {
               aria-label={promptPlaceholder}
               className={`col-start-1 row-start-1 min-h-[42px] w-full overflow-hidden ios-rounded-scroll-fix whitespace-pre-wrap break-words rounded-2xl border border-gray-200/60 bg-white/50 pl-4 pr-10 py-3 text-sm leading-relaxed shadow-sm outline-none transition-[border-color,box-shadow] duration-200 focus:ring-1 focus:ring-blue-300/40 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-100 dark:focus:ring-blue-500/30${promptExpanded ? ' !h-full !overflow-y-auto' : ''}`}
             />
+            {imageMentionPreview && createPortal(
+              <div
+                className="fixed z-[120] w-[220px] overflow-hidden rounded-xl border border-gray-200/80 bg-white p-1 shadow-xl dark:border-white/[0.12] dark:bg-gray-900"
+                style={{ left: imageMentionPreview.left, top: imageMentionPreview.top }}
+              >
+                <img
+                  src={imageMentionPreview.image.dataUrl}
+                  alt="引用图片预览"
+                  className="h-40 w-full rounded-lg object-cover"
+                />
+              </div>,
+              document.body,
+            )}
             {prompt.length === 0 && (
-              <div className={`prompt-placeholder col-start-1 row-start-1 pointer-events-none pl-4 pr-10 py-3 text-sm leading-relaxed text-gray-400 dark:text-gray-500${
+              <div className={`prompt-placeholder z-10 col-start-1 row-start-1 pointer-events-none pl-4 pr-10 py-3 text-sm leading-relaxed text-gray-400 dark:text-gray-500${
                 isMobile && mobileCollapsed ? ' truncate' : ''
               }`}>
-                {promptPlaceholder}
+                <span>输入想法或上传参考，</span>
+                <button
+                  type="button"
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    if (!atImageLimit) fileInputRef.current?.click()
+                  }}
+                  disabled={atImageLimit}
+                  className="pointer-events-auto mx-1 inline-flex h-5 w-5 -translate-y-px items-center justify-center rounded-full border border-cyan-400 bg-white text-xs font-semibold leading-none text-cyan-500 shadow-sm transition-colors hover:border-cyan-500 hover:bg-cyan-50 hover:text-cyan-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-transparent disabled:text-gray-300 dark:border-cyan-400/80 dark:bg-white/[0.04] dark:text-cyan-300 dark:hover:bg-cyan-500/10 dark:disabled:border-gray-600 dark:disabled:text-gray-600"
+                  aria-label="上传参考图"
+                  title={uploadImageTooltipText}
+                >
+                  @
+                </button>
+                <span>添加主体</span>
               </div>
             )}
             {prompt.length > 0 && (
@@ -1802,28 +1886,20 @@ export default function InputBar() {
                   onMouseEnter={() => setSubmitHover(true)}
                   onMouseLeave={() => setSubmitHover(false)}
                 >
-                  <ButtonTooltip visible={(activeAgentIsRunning || !hasSubmitApiConfig) && submitHover} text={submitTooltipText} />
+                  <ButtonTooltip visible={!hasSubmitApiConfig && submitHover} text={submitTooltipText} />
                   <button
-                    onClick={() => activeAgentIsRunning ? stopActiveAgentResponse() : hasSubmitApiConfig ? submitCurrentMode() : setShowSettings(true)}
-                    disabled={activeAgentIsRunning ? false : hasSubmitApiConfig ? !canSubmit : false}
+                    onClick={() => hasSubmitApiConfig ? submitCurrentMode() : setShowSettings(true)}
+                    disabled={hasSubmitApiConfig ? !canSubmit : false}
                     className={`p-2.5 rounded-xl transition-all shadow-sm hover:shadow ${
-                      activeAgentIsRunning
-                        ? 'bg-red-500 text-white hover:bg-red-600'
-                        : !hasSubmitApiConfig
+                      !hasSubmitApiConfig
                         ? 'bg-gray-300 dark:bg-white/[0.06] text-white cursor-pointer'
                         : 'bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-white/[0.04] disabled:opacity-50 disabled:cursor-not-allowed'
                     }`}
                     aria-label={submitButtonAriaLabel}
                   >
-                    {activeAgentIsRunning ? (
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                        <rect x="7" y="7" width="10" height="10" rx="1.5" />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                      </svg>
-                    )}
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
                   </button>
                 </div>
               </div>
@@ -1909,35 +1985,34 @@ export default function InputBar() {
                   onMouseEnter={() => setSubmitHover(true)}
                   onMouseLeave={() => setSubmitHover(false)}
                 >
-                  <ButtonTooltip visible={(activeAgentIsRunning || !hasSubmitApiConfig) && submitHover} text={submitTooltipText} />
+                  <ButtonTooltip visible={!hasSubmitApiConfig && submitHover} text={submitTooltipText} />
                   <button
-                    onClick={() => activeAgentIsRunning ? stopActiveAgentResponse() : hasSubmitApiConfig ? submitCurrentMode() : setShowSettings(true)}
-                    disabled={activeAgentIsRunning ? false : hasSubmitApiConfig ? !canSubmit : false}
+                    onClick={() => hasSubmitApiConfig ? submitCurrentMode() : setShowSettings(true)}
+                    disabled={hasSubmitApiConfig ? !canSubmit : false}
                     aria-label={submitButtonAriaLabel}
                     className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm ${
-                      activeAgentIsRunning
-                        ? 'bg-red-500 text-white hover:bg-red-600'
-                        : !hasSubmitApiConfig
+                      !hasSubmitApiConfig
                         ? 'bg-gray-300 dark:bg-white/[0.06] text-white cursor-pointer'
                         : 'bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-white/[0.04] disabled:opacity-50 disabled:cursor-not-allowed'
                     }`}
                   >
-                    {activeAgentIsRunning ? (
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                        <rect x="7" y="7" width="10" height="10" rx="1.5" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                      </svg>
-                    )}
-                    {activeAgentIsRunning ? '停止生成' : maskDraft ? '遮罩编辑' : '生成图像'}
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                    {maskDraft ? '遮罩编辑' : '生成图像'}
                   </button>
                 </div>
               </div>
             </div>
           </div>
 
+          <input
+            ref={replaceFileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleReplaceFileUpload}
+          />
           <input
             ref={fileInputRef}
             type="file"

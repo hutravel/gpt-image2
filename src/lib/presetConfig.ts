@@ -125,19 +125,11 @@ export function enforcePresetConfigPolicy(
   const activeProfileId = presetConfigOnly && !profileIds.has(settings.activeProfileId)
     ? defaultPresetProfileId ?? presetProfiles[0]?.id ?? settings.activeProfileId
     : settings.activeProfileId
-  const agentTextProfileId = presetConfigOnly && (!settings.agentTextProfileId || !profileIds.has(settings.agentTextProfileId))
-    ? presetProfiles.find((profile) => profile.provider === 'openai' && profile.apiMode === 'responses')?.id ?? null
-    : settings.agentTextProfileId
-  const agentImageProfileId = presetConfigOnly && (!settings.agentImageProfileId || !profileIds.has(settings.agentImageProfileId))
-    ? defaultPresetProfileId ?? presetProfiles[0]?.id ?? null
-    : settings.agentImageProfileId
 
   return {
     ...settings,
     customProviders,
     profiles,
     activeProfileId,
-    agentTextProfileId,
-    agentImageProfileId,
   }
 }
