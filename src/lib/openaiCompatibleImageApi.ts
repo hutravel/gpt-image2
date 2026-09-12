@@ -108,9 +108,17 @@ function normalizeImageApiPayload(value: unknown): ImageApiResponse {
 
 function createRequestHeaders(profile: ApiProfile, useWorkerProxy = false): Record<string, string> {
   if (useWorkerProxy) {
+    const config = JSON.stringify({
+      baseUrl: getProxyUpstreamBaseUrl(profile.baseUrl),
+      apiKey: profile.apiKey,
+    })
+    const encodedConfig = btoa(Array.from(new TextEncoder().encode(config), (byte) => String.fromCharCode(byte)).join(''))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')
+
     return {
-      'X-Target-Base-Url': getProxyUpstreamBaseUrl(profile.baseUrl),
-      'X-Target-Api-Key': profile.apiKey,
+      'X-Target-Config': encodedConfig,
     }
   }
 

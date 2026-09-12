@@ -1416,14 +1416,18 @@ describe('callImageApi', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://gpt-image-aqzuoonyeh.cn-hangzhou.fcapp.run/v1/images/generations',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          'X-Target-Base-Url': 'https://api.example.com',
-          'X-Target-Api-Key': 'test-key',
-        }),
-      }),
+      expect.objectContaining({ method: 'POST' }),
     )
+    const headers = fetchMock.mock.calls[0][1]?.headers as Record<string, string>
+    const encodedConfig = headers['X-Target-Config'].replace(/-/g, '+').replace(/_/g, '/')
+    const paddedConfig = encodedConfig.padEnd(Math.ceil(encodedConfig.length / 4) * 4, '=')
+    const configBytes = Uint8Array.from(atob(paddedConfig), (char) => char.charCodeAt(0))
+    expect(JSON.parse(new TextDecoder().decode(configBytes))).toEqual({
+      baseUrl: 'https://api.example.com',
+      apiKey: 'test-key',
+    })
+    expect(headers).not.toHaveProperty('X-Target-Base-Url')
+    expect(headers).not.toHaveProperty('X-Target-Api-Key')
   })
 
   it('polls custom async tasks immediately and keeps polling after transient network errors', async () => {
