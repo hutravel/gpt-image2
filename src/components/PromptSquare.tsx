@@ -419,7 +419,7 @@ export default function PromptSquare() {
               <div className="min-w-0 md:order-1 md:col-span-6">
                 <div className="mb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">来源</div>
                 <div className="w-full rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-white/[0.08] dark:bg-white/[0.03]">
-                  <div className="grid grid-cols-3 gap-1 sm:grid-cols-6" role="tablist" aria-label="提示词来源">
+                  <div className="grid grid-cols-4 gap-1 sm:grid-cols-7" role="tablist" aria-label="提示词来源">
                     {PROMPT_SOURCES.map((source) => {
                       const active = source.id === activeSourceId
                       return (
