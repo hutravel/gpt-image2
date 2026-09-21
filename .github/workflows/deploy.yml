@@ -5,8 +5,6 @@ on:
     branches:
       - main
     tags: ['v*']
-    paths:
-      - package.json
   workflow_dispatch:
 
 permissions:
@@ -32,7 +30,6 @@ jobs:
         id: release
         env:
           BEFORE_SHA: ${{ github.event.before }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch || "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "deploy=true" >> "$GITHUB_OUTPUT"
@@ -47,12 +44,8 @@ jobs:
             exit 0
           fi
 
-          if gh api --silent "repos/CookSleep/gpt_image_playground/releases/tags/v$version"; then
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Release v$version does not exist. Skipping GitHub Pages deployment."
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "Version changed to v$version. Triggering deployment."
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
 
   build:
     needs: release
