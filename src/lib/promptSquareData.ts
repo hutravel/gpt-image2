@@ -6,6 +6,7 @@ const EVOLINK_IMAGE_BASE_URL = 'https://raw.githubusercontent.com/EvoLinkAI/awes
 const FREESTYLE_FLY_IMAGE_BASE_URL = 'https://raw.githubusercontent.com/freestylefly/awesome-gpt-image-2/main/data'
 const YOU_MIND_IMAGE_BASE_URL = 'https://raw.githubusercontent.com/YouMind-OpenLab/awesome-gpt-image-2/main'
 const ZERO_LU_IMAGE_BASE_URL = 'https://raw.githubusercontent.com/ZeroLu/awesome-gpt-image/main'
+const SHUIXIAN_IMAGE_BASE_URL = 'https://r2.qqsrc.com'
 
 export const PROMPT_SOURCES = [
   {
@@ -65,6 +66,14 @@ export const PROMPT_SOURCES = [
     dataUrl: './data/prompts-zerolu.json',
     repoUrl: 'https://github.com/ZeroLu/awesome-gpt-image',
     imageBaseUrl: ZERO_LU_IMAGE_BASE_URL,
+  },
+  {
+    id: 'shuixian' as const,
+    label: 'ShuiXian',
+    description: '5430 条精选提示词 · 12 大分类 79 小类（人物 / 动漫 / 海报 / 插画 / 产品 / 游戏）',
+    dataUrl: './data/prompts-shuixian.json',
+    repoUrl: 'https://github.com/BaYue-SYJ/shuixian-prompts',
+    imageBaseUrl: SHUIXIAN_IMAGE_BASE_URL,
   },
 ]
 
