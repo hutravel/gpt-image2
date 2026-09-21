@@ -35,6 +35,13 @@ const sources = {
     imageBaseUrl: 'https://raw.githubusercontent.com/ZeroLu/awesome-gpt-image/main',
     outputFile: 'prompts-zerolu.json',
   },
+  shuiXian: {
+    // 水仙提示词：5430 条，数据已为结构化 JSON，图片走 Cloudflare R2
+    base: 'https://cdn.jsdelivr.net/gh/BaYue-SYJ/shuixian-prompts@main/shuixian-unified/data',
+    parts: ['prompts.part1.json', 'prompts.part2.json', 'prompts.part3.json'],
+    meta: 'meta.json',
+    outputFile: 'prompts-shuixian.json',
+  },
 }
 
 async function fetchText(url, maximumAttempts = 3) {
@@ -57,6 +64,11 @@ async function fetchText(url, maximumAttempts = 3) {
 
   const reason = lastError instanceof Error ? lastError.message : String(lastError)
   throw new Error(`Unable to download ${url} after ${maximumAttempts} attempts: ${reason}`)
+}
+
+async function fetchJson(url) {
+  const text = await fetchText(url)
+  return JSON.parse(text)
 }
 
 function getMarkdownImageUrl(markdown) {
@@ -155,14 +167,63 @@ async function writeJson(fileName, value) {
   return outputPath
 }
 
+function buildShuiXianMajorMap(meta) {
+  const map = new Map()
+  for (const major of meta.majors) {
+    map.set(major.name, major.name)
+    for (const sub of major.subs) map.set(sub.name, major.name)
+  }
+  return map
+}
+
+function transformShuiXianItem(item, majorMap) {
+  const sub = String(item.category ?? '').trim()
+  const major = majorMap.get(sub) ?? sub ?? '未分类'
+  return {
+    id: item.id,
+    title: item.title,
+    prompt: item.prompt,
+    image: item.image || item.thumb,
+    category: major,
+    sub_category: sub,
+    sourceUrl: item.tweet || undefined,
+    likes: item.likes,
+    themes: item.themes,
+    styles: item.styles,
+  }
+}
+
+async function syncShuiXian() {
+  const { base, parts, meta, outputFile } = sources.shuiXian
+  const [metaJson, ...partsJson] = await Promise.all([
+    fetchJson(`${base}/${meta}`),
+    ...parts.map((part) => fetchJson(`${base}/${part}`)),
+  ])
+  const majorMap = buildShuiXianMajorMap(metaJson)
+  const raw = partsJson.flat()
+  const seen = new Set()
+  const items = []
+  for (const item of raw) {
+    if (!item.prompt || !item.image) continue
+    const key = `${item.image}\n${item.prompt}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    items.push(transformShuiXianItem(item, majorMap))
+  }
+  if (items.length === 0) throw new Error('ShuiXian source did not contain any prompts')
+  await writeJson(outputFile, items)
+  return items.length
+}
+
 async function syncSources() {
-  const [freestyleFlyText, youMindReadmes, zeroLuReadmes] = await Promise.all([
+  const [freestyleFlyText, youMindReadmes, zeroLuReadmes, shuiXianCount] = await Promise.all([
     fetchText(sources.freestyleFly.url),
     Promise.all(sources.youMind.collections.map(async (collection) => ({
       collection,
       markdown: await fetchText(collection.url),
     }))),
     Promise.all(sources.zeroLu.urls.map((url) => fetchText(url))),
+    syncShuiXian(),
   ])
 
   const freestyleFlyData = JSON.parse(freestyleFlyText)
@@ -190,6 +251,7 @@ async function syncSources() {
   console.log(`FreestyleFly: ${freestyleFlyData.cases.length} prompts`)
   console.log(`YouMind: ${youMindPrompts.length} prompts`)
   console.log(`ZeroLu: ${zeroLuPrompts.length} prompts`)
+  console.log(`ShuiXian: ${shuiXianCount} prompts`)
 }
 
 await syncSources()
