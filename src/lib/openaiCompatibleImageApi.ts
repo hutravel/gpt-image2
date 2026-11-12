@@ -1,6 +1,6 @@
 import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefinition, type CustomProviderPollMapping, type CustomProviderResultMapping, type CustomProviderSubmitMapping, type ImageApiResponse, type ImageResponseItem, type ResponsesApiResponse, type ResponsesOutputItem, type TaskParams } from '../types'
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
-import { buildApiUrl, readClientDevProxyConfig, shouldUseApiProxy } from './devProxy'
+import { buildApiUrl, isApiProxyLocked, readClientDevProxyConfig, shouldUseApiProxy } from './devProxy'
 import {
   applyGptImage26Params,
   assertImageInputPayloadSize,
@@ -51,23 +51,24 @@ function createOpenAICompatiblePaths() {
   }
 }
 
-const IMAGE_API_PROXY_URL = (
+export const IMAGE_API_PROXY_URL = (
   import.meta.env.VITE_IMAGE_API_PROXY_URL?.trim() ||
   'https://gpt-image-aqzuoonyeh.cn-hangzhou.fcapp.run'
 ).replace(/\/+$/, '')
 
-function getProxyUpstreamBaseUrl(baseUrl: string): string {
+/** 云函数按自己的路径前缀（/v1、/v1beta）转发，上游地址要去掉末尾的版本段 */
+export function getProxyUpstreamBaseUrl(baseUrl: string, apiVersion = 'v1'): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, '')
   if (!trimmed) return trimmed
 
   try {
     const url = new URL(trimmed)
-    if (url.pathname === '/v1' || url.pathname.endsWith('/v1')) {
-      url.pathname = url.pathname.slice(0, -3) || '/'
+    if (url.pathname === `/${apiVersion}` || url.pathname.endsWith(`/${apiVersion}`)) {
+      url.pathname = url.pathname.slice(0, -(apiVersion.length + 1)) || '/'
     }
     return url.toString().replace(/\/+$/, '')
   } catch {
-    return trimmed.replace(/\/v1$/, '')
+    return trimmed.replace(new RegExp(`/${apiVersion}$`), '')
   }
 }
 
@@ -117,20 +118,28 @@ function normalizeImageApiPayload(value: unknown): ImageApiResponse {
   return { data: [] }
 }
 
+function encodeWorkerProxyConfig(config: Record<string, string>): string {
+  return btoa(Array.from(new TextEncoder().encode(JSON.stringify(config)), (byte) => String.fromCharCode(byte)).join(''))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}
+
+/** 云函数转发时把上游地址和密钥编码进 X-Target-Config，避免跨域预检额外的自定义头 */
+export function createWorkerProxyHeaders(targetBaseUrl: string, apiKey: string): Record<string, string> {
+  return { 'X-Target-Config': encodeWorkerProxyConfig({ baseUrl: targetBaseUrl, apiKey }) }
+}
+
+/** 网页版部署在没有本地代理的环境时，OpenAI Images 与 Grok/Gemini 兼容接口统一经云函数转发，规避中转站的 CORS 限制 */
+function usesImageApiWorkerProxy(profile: ApiProfile, useApiProxy: boolean): boolean {
+  // 部署端本地代理（/api-proxy）优先；锁定代理时必须走本地代理，不落到云函数
+  if (useApiProxy || isApiProxyLocked()) return false
+  return profile.provider === 'openai' && profile.apiMode === 'images' ? true : Boolean(getImageModelFamily(profile))
+}
+
 function createRequestHeaders(profile: ApiProfile, useWorkerProxy = false): Record<string, string> {
   if (useWorkerProxy) {
-    const config = JSON.stringify({
-      baseUrl: getProxyUpstreamBaseUrl(profile.baseUrl),
-      apiKey: profile.apiKey,
-    })
-    const encodedConfig = btoa(Array.from(new TextEncoder().encode(config), (byte) => String.fromCharCode(byte)).join(''))
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, '')
-
-    return {
-      'X-Target-Config': encodedConfig,
-    }
+    return createWorkerProxyHeaders(getProxyUpstreamBaseUrl(profile.baseUrl), profile.apiKey)
   }
 
   return {
@@ -533,12 +542,15 @@ async function callModelImagesApi(opts: CallApiOptions, profile: ApiProfile): Pr
   if (profile.responseFormatB64Json) body.response_format = 'b64_json'
   assertImageInputPayloadSize(opts.inputImageDataUrls.reduce((sum, url) => sum + url.length, 0))
   const proxyConfig = readClientDevProxyConfig()
+  const useApiProxy = shouldUseApiProxy(profile.apiProxy, proxyConfig)
+  const useWorkerProxy = usesImageApiWorkerProxy(profile, useApiProxy)
+  const requestPath = family === 'grok' && !grokSizeParams && isEdit ? 'images/edits' : 'images/generations'
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(createRequestTimeoutError(profile.timeout)), profile.timeout * 1000)
   try {
-    const response = await apiFetch(buildApiUrl(profile.baseUrl, family === 'grok' && !grokSizeParams && isEdit ? 'images/edits' : 'images/generations', proxyConfig, profile.provider === 'openai' && shouldUseApiProxy(profile.apiProxy, proxyConfig)), {
+    const response = await apiFetch(useWorkerProxy ? `${IMAGE_API_PROXY_URL}/v1/${requestPath}` : buildApiUrl(profile.baseUrl, requestPath, proxyConfig, useApiProxy), {
       method: 'POST',
-      headers: { ...createRequestHeaders(profile), 'Content-Type': 'application/json' },
+      headers: { ...createRequestHeaders(profile, useWorkerProxy), 'Content-Type': 'application/json' },
       cache: 'no-store',
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -549,7 +561,7 @@ async function callModelImagesApi(opts: CallApiOptions, profile: ApiProfile): Pr
     if (typeof taskId === 'string' && taskId.trim()) {
       opts.onCustomTaskEnqueued?.({ taskId })
       clearTimeout(timeoutId)
-      return await pollCustomTaskResult(profile, OPENAI_IMAGE_TASK_PROVIDER.poll!, taskId, family === 'grok' ? 'image/jpeg' : 'image/png', controller.signal)
+      return await pollCustomTaskResult(profile, OPENAI_IMAGE_TASK_PROVIDER.poll!, taskId, family === 'grok' ? 'image/jpeg' : 'image/png', controller.signal, useWorkerProxy)
     }
     return await parseImagesApiResponse(payload, family === 'grok' ? 'image/jpeg' : 'image/png', controller.signal)
   } catch (err) {
@@ -603,7 +615,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile): P
   const mime = MIME_MAP[params.output_format] || 'image/png'
   const proxyConfig = readClientDevProxyConfig()
   const useApiProxy = shouldUseApiProxy(profile.apiProxy, proxyConfig)
-  const useWorkerProxy = !useApiProxy && profile.provider === 'openai' && profile.apiMode === 'images'
+  const useWorkerProxy = usesImageApiWorkerProxy(profile, useApiProxy)
   const requestHeaders = createRequestHeaders(profile, useWorkerProxy)
   const paths = createOpenAICompatiblePaths()
 
@@ -1010,9 +1022,11 @@ async function pollCustomTaskResult(
   taskId: string,
   mime: string,
   signal?: AbortSignal,
+  useWorkerProxy = false,
 ): Promise<CallApiResult> {
   const proxyConfig = readClientDevProxyConfig()
-  const requestHeaders = createRequestHeaders(profile)
+  const useApiProxy = shouldUseApiProxy(profile.apiProxy, proxyConfig)
+  const requestHeaders = createRequestHeaders(profile, useWorkerProxy)
   let isFirstPoll = true
 
   while (true) {
@@ -1028,7 +1042,7 @@ async function pollCustomTaskResult(
     const taskPath = appendQuery(buildTaskPath(poll.path.replace(/\{model\}/g, encodeURIComponent(profile.model)), taskId), query)
     let taskPayload: unknown
     try {
-      const taskResponse = await apiFetch(buildApiUrl(profile.baseUrl, taskPath, proxyConfig, profile.provider === 'openai' && shouldUseApiProxy(profile.apiProxy, proxyConfig)), {
+      const taskResponse = await apiFetch(useWorkerProxy ? `${IMAGE_API_PROXY_URL}/v1/${taskPath}` : buildApiUrl(profile.baseUrl, taskPath, proxyConfig, useApiProxy), {
         method: poll.method ?? 'GET',
         headers: requestHeaders,
         cache: 'no-store',
@@ -1076,7 +1090,8 @@ export async function getCustomQueuedImageResult(
   customProvider = resolveCustomProviderModel(customProvider, profile.model)
   if (!customProvider.poll) throw new Error('自定义异步任务缺少 poll 配置')
   const mime = MIME_MAP[params.output_format] || 'image/png'
-  return pollCustomTaskResult(profile, customProvider.poll, taskId, mime)
+  const proxyConfig = readClientDevProxyConfig()
+  return pollCustomTaskResult(profile, customProvider.poll, taskId, mime, undefined, usesImageApiWorkerProxy(profile, shouldUseApiProxy(profile.apiProxy, proxyConfig)))
 }
 
 async function callCustomHttpImageApi(opts: CallApiOptions, profile: ApiProfile, customProvider: CustomProviderDefinition): Promise<CallApiResult> {

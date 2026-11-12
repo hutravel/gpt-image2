@@ -1,8 +1,9 @@
 import type { ApiProfile } from '../types'
-import { buildApiUrl, readClientDevProxyConfig } from './devProxy'
+import { buildApiUrl, readClientDevProxyConfig, shouldUseApiProxy } from './devProxy'
 import { getImageModelParams } from './imageModelParams'
 import { getImageSearchSupport, getImageThinkingSupport, parseImageSearchGrounding } from './imageSearch'
 import { assertImageInputPayloadSize, createRequestTimeoutError, getApiErrorMessage, mergeConcurrentApiResults, type CallApiOptions, type CallApiResult } from './imageApiShared'
+import { IMAGE_API_PROXY_URL, createWorkerProxyHeaders, getProxyUpstreamBaseUrl } from './openaiCompatibleImageApi'
 import { apiFetch } from './platform'
 
 export async function callGoogleImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
@@ -37,13 +38,20 @@ export async function callGoogleImageApi(opts: CallApiOptions, profile: ApiProfi
     ...(params.resolution ? { imageSize: params.resolution } : {}),
   }
   const model = profile.model.replace(/^models\//, '')
-  const url = buildApiUrl(profile.baseUrl, `models/${encodeURIComponent(model)}:generateContent`, readClientDevProxyConfig(), false, 'v1beta')
+  // 网页版没有本地代理时，Google 原生接口也经云函数转发，规避中转站的 CORS 限制
+  const useWorkerProxy = !shouldUseApiProxy(profile.apiProxy, readClientDevProxyConfig())
+  const requestPath = `models/${encodeURIComponent(model)}:generateContent`
+  const url = useWorkerProxy
+    ? `${IMAGE_API_PROXY_URL}/v1beta/${requestPath}`
+    : buildApiUrl(profile.baseUrl, requestPath, readClientDevProxyConfig(), false, 'v1beta')
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(createRequestTimeoutError(profile.timeout)), profile.timeout * 1000)
   try {
     const response = await apiFetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': profile.apiKey },
+      headers: useWorkerProxy
+        ? { 'Content-Type': 'application/json', ...createWorkerProxyHeaders(getProxyUpstreamBaseUrl(profile.baseUrl, 'v1beta'), profile.apiKey) }
+        : { 'Content-Type': 'application/json', 'x-goog-api-key': profile.apiKey },
       cache: 'no-store',
       body: JSON.stringify({ contents: [{ role: 'user', parts }], tools, generationConfig: { responseModalities: ['IMAGE'], imageConfig, thinkingConfig } }),
       signal: controller.signal,

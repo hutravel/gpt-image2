@@ -185,8 +185,14 @@ describe('Google 单次生成', () => {
     })
     expect(fetchMock).toHaveBeenCalledOnce()
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent')
-    expect(init?.headers).toEqual({ 'Content-Type': 'application/json', 'x-goog-api-key': 'test-key' })
+    expect(url).toBe('https://gpt-image-aqzuoonyeh.cn-hangzhou.fcapp.run/v1beta/models/gemini-3.1-flash-image:generateContent')
+    const headers = init?.headers as Record<string, string>
+    expect(headers['x-goog-api-key']).toBeUndefined()
+    const encodedConfig = headers['X-Target-Config']
+    expect(JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(encodedConfig.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(encodedConfig.length / 4) * 4, '=')), (char) => char.charCodeAt(0))))).toEqual({
+      baseUrl: 'https://generativelanguage.googleapis.com',
+      apiKey: 'test-key',
+    })
     expect(JSON.parse(String(init?.body))).toEqual({
       contents: [{ role: 'user', parts: [{ text: '生成图像：\n修改背景' }, { inlineData: { mimeType: 'image/png', data: 'aW1hZ2U=' } }] }],
       generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '16:9', imageSize: '2K' } },
@@ -240,9 +246,9 @@ describe('OpenAI Images 模型适配', () => {
     const params = normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 2, aspect_ratio: '16:9', resolution: '2K', quality: 'medium' }, config)
     expect(params.resolution).toBeUndefined()
     await callImageApi({ settings: config, prompt: '猫', params, inputImageDataUrls: [PNG], inputImageUrls: ['https://images.example.com/input.png'] })
-    expect(fetchMock.mock.calls[0][0]).toBe('https://example.com/v1/images/generations')
+    expect(fetchMock.mock.calls[0][0]).toBe('https://gpt-image-aqzuoonyeh.cn-hangzhou.fcapp.run/v1/images/generations')
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ model: 'grok-imagine-1.5-ext', prompt: '猫', n: 2, size: '16:9', response_format: 'b64_json', image_urls: ['https://images.example.com/input.png'] })
-    expect(fetchMock.mock.calls[1][0]).toBe('https://example.com/v1/tasks/example-task')
+    expect(fetchMock.mock.calls[1][0]).toBe('https://gpt-image-aqzuoonyeh.cn-hangzhou.fcapp.run/v1/tasks/example-task')
   })
 
   it('Grok 数字别名拒绝本地参考图，避免提交无效的 Base64 请求', async () => {
@@ -255,7 +261,7 @@ describe('OpenAI Images 模型适配', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ data: [{ b64_json: 'aW1hZ2U=' }] }))
     await callImageApi({ settings: settings({ model: 'gemini-nano-banana-example', streamImages: true }), prompt: '猫', params: { ...DEFAULT_PARAMS, n: 3, quality: 'max', aspect_ratio: '3:2', resolution: '4K' }, inputImageDataUrls: [PNG] })
     expect(fetchMock).toHaveBeenCalledOnce()
-    expect(fetchMock.mock.calls[0][0]).toBe('https://example.com/v1/images/generations')
+    expect(fetchMock.mock.calls[0][0]).toBe('https://gpt-image-aqzuoonyeh.cn-hangzhou.fcapp.run/v1/images/generations')
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ model: 'gemini-nano-banana-example', prompt: '猫', n: 3, size: '3:2', resolution: '4K', response_format: 'b64_json', image_urls: [PNG] })
   })
 
@@ -263,7 +269,7 @@ describe('OpenAI Images 模型适配', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ data: [{ b64_json: '/9j/aW1hZ2U=' }, { b64_json: '/9j/second' }] }))
     const result = await callImageApi({ settings: settings({ provider, model: 'grok-imagine-image-2.0', responseFormatB64Json: true }), prompt: '合并', params: { ...DEFAULT_PARAMS, n: 2, aspect_ratio: '16:9', resolution: '2K', quality: 'medium' }, inputImageDataUrls: [PNG, PNG] })
     expect(fetchMock).toHaveBeenCalledOnce()
-    expect(fetchMock.mock.calls[0][0]).toBe('https://example.com/v1/images/edits')
+    expect(fetchMock.mock.calls[0][0]).toBe('https://gpt-image-aqzuoonyeh.cn-hangzhou.fcapp.run/v1/images/edits')
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ model: 'grok-imagine-image-2.0', prompt: '合并', n: 2, aspect_ratio: '16:9', resolution: '2k', quality: 'medium', images: [{ type: 'image_url', url: PNG }, { type: 'image_url', url: PNG }], response_format: 'b64_json' })
     expect(result.images).toHaveLength(2)
     expect(result.images[0]).toMatch(/^data:image\/jpeg/)
@@ -311,7 +317,7 @@ describe('异步任务和自定义多模型映射', () => {
     vi.stubEnv('VITE_API_PROXY_LOCKED', 'true')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ data: [{ b64_json: 'aW1hZ2U=' }] }))
     await callImageApi({ settings: settings({ provider: 'xai', model: 'grok-imagine-image-2.0' }), prompt: '猫', params: DEFAULT_PARAMS, inputImageDataUrls: [] })
-    expect(fetchMock.mock.calls[0][0]).toBe('https://example.com/v1/images/generations')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api-proxy/images/generations')
   })
 
   it('接受任务对象形式的 ID 和字符串结果链接', async () => {
@@ -319,7 +325,7 @@ describe('异步任务和自定义多模型映射', () => {
       .mockResolvedValueOnce(json({ data: { object: 'generation.task', id: 'example-task', status: 'pending' } }, 202))
       .mockResolvedValueOnce(json({ data: { status: 'completed', result: { images: [{ url: PNG }] } } }))
     await callImageApi({ settings: settings({ model: 'grok-imagine-image-2.0' }), prompt: '猫', params: DEFAULT_PARAMS, inputImageDataUrls: [] })
-    expect(fetchMock.mock.calls[1][0]).toBe('https://example.com/v1/tasks/example-task')
+    expect(fetchMock.mock.calls[1][0]).toBe('https://gpt-image-aqzuoonyeh.cn-hangzhou.fcapp.run/v1/tasks/example-task')
   })
 
   it('轮询遇到临时错误和处理中状态时继续查询，不重复提交', async () => {
@@ -352,7 +358,7 @@ describe('异步任务和自定义多模型映射', () => {
     const config = settings({ model: 'gemini-nano-banana-example' })
     const result = await callImageApi({ settings: config, prompt: '猫', params: DEFAULT_PARAMS, inputImageDataUrls: [], onCustomTaskEnqueued: enqueued })
     expect(enqueued).toHaveBeenCalledWith({ taskId: 'task/1' })
-    expect(fetchMock.mock.calls[1][0]).toBe('https://example.com/v1/tasks/task%2F1')
+    expect(fetchMock.mock.calls[1][0]).toBe('https://gpt-image-aqzuoonyeh.cn-hangzhou.fcapp.run/v1/tasks/task%2F1')
     expect(result.images).toEqual([PNG])
     fetchMock.mockClear().mockResolvedValue(json({ data: { status: 'completed', result: { images: [{ url: [PNG] }] } } }))
     await getCustomQueuedImageResult(getActiveApiProfile(config), OPENAI_IMAGE_TASK_PROVIDER, 'task/1', DEFAULT_PARAMS)
