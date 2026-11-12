@@ -1,24 +1,28 @@
+import type { ReactNode } from 'react'
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import type {
   InputDraft,
   ApiMode,
   ApiProfile,
   AppSettings,
+  BatchProgress,
+  PresetConfig,
   AppMode,
   TaskParams,
   InputImage,
   MaskDraft,
+  SketchBoardRequest,
   TaskRecord,
   FavoriteCollection,
   StoredImage,
   StoredImageThumbnail,
 } from './types'
 import { DEFAULT_PARAMS } from './types'
-import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, mergePresetImportedSettings, normalizeSettings, validateApiProfile } from './lib/apiProfiles'
+import { DEFAULT_SETTINGS, createSettingsForApiProfile, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, mergePresetImportedSettings, normalizeSettings, resolveApiProfileModel, splitModelList, validateApiProfile } from './lib/apiProfiles'
 import { enforcePresetConfigPolicy, getPresetConfig, getPresetProfileIds, getPresetProviderIds, isPresetConfigDeletionPrevented, isPresetConfigOnlyEnabled, isPresetConfigParamsLocked, isPresetProfile, isPresetProviderDeletionPrevented } from './lib/presetConfig'
 import { dismissAllTooltips } from './lib/tooltipDismiss'
-import { remapImageMentionsForOrder, replaceImageMentionsForApi } from './lib/promptImageMentions'
+import { getTaskPromptText, remapImageMentionsForOrder, replaceImageMentionsForApi, stripImageMentionMarkers } from './lib/promptImageMentions'
 import {
   getAllTasks,
   getLegacyProtectedImageIds,
@@ -28,7 +32,6 @@ import {
   clearTasks as dbClearTasks,
   getImage,
   getStoredImageThumbnail,
-  getImageThumbnail,
   getAllImageIds,
   putImage,
   putImageThumbnail,
@@ -38,24 +41,36 @@ import {
 } from './lib/db'
 import { callImageApi } from './lib/api'
 import { showBrowserNotification } from './lib/browserNotification'
-import { IMAGE_FETCH_CORS_HINT } from './lib/imageApiShared'
+import { IMAGE_FETCH_CORS_HINT, isHttpUrl } from './lib/imageApiShared'
 import { getFalErrorMessage, getFalQueuedImageResult } from './lib/falAiImageApi'
 import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
-import { validateMaskMatchesImage } from './lib/canvasImage'
+import { OPENAI_IMAGE_TASK_PROVIDER, resolveCustomProviderModel } from './lib/imageProviderMappings'
+import { toApiInputImageDataUrl, validateMaskMatchesImage } from './lib/canvasImage'
+import { persistTaskInputImages, toReferenceImage } from './lib/inputImages'
 import { orderInputImagesForMask } from './lib/mask'
-import { getChangedParams, normalizeParamsForSettings } from './lib/paramCompatibility'
+import { getChangedParams, getTaskParamSupport, normalizeParamsForSettings, supportsTransparentOutput } from './lib/paramCompatibility'
+import { getImageModelFamily, isVectorOrAnimatedFormat } from './lib/imageModels'
+import { runWithConcurrency, splitBatchPrompts } from './lib/batchPrompts'
 import { createTransparentOutputMeta, getTransparentRequestParams, removeKeyedBackgroundFromDataUrl } from './lib/transparentImage'
 import { blobToDataUrl, fileToDataUrl } from './lib/dataUrl'
-import { cacheImage, cacheThumbnail, clearImageCaches, deleteCachedImage, deleteImageCacheEntry, ensureImageCached, scheduleThumbnailBackfill } from './lib/imageCache'
-import { hasActiveDataOperations } from './lib/dataOperations'
+import { cacheImage, cacheThumbnail, clearImageCaches, deleteCachedImage, deleteImageCacheEntry, ensureImageCached, scheduleMissingThumbnailBackfill } from './lib/imageCache'
+import { migrateImagesToBlob } from './lib/imageBlob'
+import { hasActiveDataOperations, isCustomRecoverableTask, isFalRecoverableTask } from './lib/dataOperations'
 import { formatExportFileTime } from './lib/exportFileName'
-import { buildExportZip, createExportBlob, getExportImageEstimatedBytes, getExportZipPlan, MAX_EXPORT_ZIP_BYTES, readExportZip, readExportZipFileAsDataUrl, readExportZipManifest } from './lib/exportZip'
-import { isEmptyInputDraft, restoreGalleryInputDraftState, saveGalleryInputDraft, syncActiveInputDraft, updateInputDraftImages } from './lib/inputDraftState'
-import { ALL_FAVORITES_COLLECTION_ID, DEFAULT_FAVORITE_COLLECTION_ID, createDefaultFavoriteCollection, deleteFavoriteCollectionState, ensureDefaultFavoriteCollection, getTaskFavoriteCollectionIds, mergeFavoriteCollections, normalizeFavoriteCollectionIds, normalizeFavoriteCollectionName, normalizeFavoriteCollections, normalizeFavoritePatch, normalizeLoadedFavoriteState, resolveDefaultFavoriteCollectionId, sameFavoriteCollectionIds } from './lib/favoriteState'
+import { buildExportZip, createExportBlob, getExportFileEstimatedBytes, getExportZipPlan, MAX_EXPORT_ZIP_BYTES, readExportZip, readExportZipFileAsDataUrl, readExportZipManifest } from './lib/exportZip'
+import { getExportImageSizes, readExportImages } from './lib/exportImages'
+import { clearInputDraftState, isEmptyInputDraft, restoreGalleryInputDraftState, saveGalleryInputDraft, syncActiveInputDraft, updateInputDraftImages } from './lib/inputDraftState'
+import { ALL_FAVORITES_COLLECTION_ID, DEFAULT_FAVORITE_COLLECTION_ID, createDefaultFavoriteCollection, deleteFavoriteCollectionState, ensureDefaultFavoriteCollection, getNewTaskFavoritePatch, getTaskFavoriteCollectionIds, mergeFavoriteCollections, normalizeFavoriteCollectionIds, normalizeFavoriteCollectionName, normalizeFavoriteCollections, normalizeFavoritePatch, normalizeLoadedFavoriteState, resolveDefaultFavoriteCollectionId, sameFavoriteCollectionIds } from './lib/favoriteState'
 import { createPersistedState, migratePersistedState, normalizePersistedState } from './lib/persistedState'
 import { addImageSizeParam, createTaskDonePatch, createTaskErrorPatch, deriveGalleryActualParams, firstActualParams, hasActualParams, hasActualSizeParam, mapActualParamsByImage, mapRevisedPromptsByImage, markInterruptedOpenAIRunningTasks } from './lib/taskState'
 import { getPersistableRawResponsePayload } from './lib/taskResponsePayload'
 import { stripInjectedCodexCliSizePrompt } from './lib/size'
+import { apiFetch, FetchConnectError, isTauri } from './lib/platform'
+import { pickSaveDir, saveFile, saveFileToDir, type SaveOptions } from './lib/saveFile'
+import { endDataProgress, setDataProgressCancelable, startDataProgress, updateDataProgress, useSettingsDataTransfer } from './lib/dataProgress'
+import { throwIfAborted } from './lib/serverSentEvents'
+import { tauriStorage } from './lib/tauriStorage'
+import { createPrivacyModeState, getPrivacySnapshotImageIds, isPrivacyHiddenTask, restorePrivacyInputState, type PrivacyModeState } from './lib/privacyMode'
 
 const FAL_RECOVERY_POLL_MS = 10_000
 const CUSTOM_RECOVERY_POLL_MS = 10_000
@@ -63,6 +78,7 @@ const SUPPORT_PROMPT_IMAGE_THRESHOLD = 50
 const falRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const customRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const openAIWatchdogTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const taskExecutions = new Map<string, symbol>()
 const ERROR_TOAST_MAX_LENGTH = 80
 type ToastType = 'info' | 'success' | 'error'
 
@@ -89,7 +105,7 @@ function isErrorToastTitle(title: string): boolean {
   return /(?:失败|错误|异常|报错|无法|不能|超时|中断|断开|请先|请输入|已达上限|不存在|已丢失)$/.test(title)
 }
 
-export type SettingsTab = 'general' | 'api' | 'data'
+export type SettingsTab = 'general' | 'appearance' | 'skill' | 'api' | 'data' | 'about'
 
 const TIMEOUT_STREAMING_HINT = '也可尝试打开「流式传输」，并提高「请求中间步骤图像数」来维持连接。'
 const TIMEOUT_PARTIAL_IMAGES_ZERO_HINT = '官方流式接口不发送心跳，当前「请求中间步骤图像数」为 0，连接可能因无数据传输而断开。建议提高到 2 或 3。'
@@ -119,17 +135,30 @@ function orderImagesWithMaskFirst(images: InputImage[], maskTargetImageId: strin
   return next
 }
 
-function isAgentTask(task: TaskRecord) {
+export function isAgentTask(task: TaskRecord) {
   return task.sourceMode === 'agent'
 }
 
-function showTaskCompletionNotification(title: string, body: string) {
+// 失败通知用独立 tag，避免与成功通知互相覆盖
+function showTaskCompletionNotification(title: string, body: string, tag = 'task-completion') {
   const settings = normalizeSettings(useStore.getState().settings)
   if (!settings.taskCompletionNotification) return
-  showBrowserNotification(title, { body })
+  showBrowserNotification(title, { body, tag })
 }
 
-function countSuccessfulOutputImages(tasks: TaskRecord[]) {
+// 隐私模式中丢弃进入前已开始的任务和对话的提示与通知，退出后也不补发
+function isTaskHiddenByPrivacyMode(task: TaskRecord) {
+  return isPrivacyHiddenTask(useStore.getState().privacyMode, task)
+}
+
+
+function showTaskFailureNotification(task: TaskRecord) {
+  // Agent 任务由所在回合统一通知，批量任务在整批结束时汇总失败数量
+  if (isAgentTask(task) || batchTaskIds.has(task.id) || isTaskHiddenByPrivacyMode(task)) return
+  showTaskCompletionNotification('图像生成失败', '请回到应用查看详情。', 'task-failure')
+}
+
+export function countSuccessfulOutputImages(tasks: TaskRecord[]) {
   return tasks.reduce((count, task) => count + (task.status === 'done' && !isAgentTask(task) ? task.outputImages.length : 0), 0)
 }
 
@@ -173,7 +202,9 @@ function maybeOpenSupportPrompt(previousTasks: TaskRecord[], nextTasks: TaskReco
 }
 
 export function getPersistedState(state: AppState) {
-  return createPersistedState(state)
+  // 隐私模式中输入框已清空，仍保存进入前的输入，刷新后不丢失
+  const source = state.privacyMode ? { ...state, ...state.privacyMode.inputSnapshot } : state
+  return createPersistedState(source)
 }
 
 function mergePersistedState(persistedState: unknown, currentState: AppState): AppState {
@@ -199,7 +230,7 @@ interface AppState {
 
   // 设置
   settings: AppSettings
-  previousPresetConfig: Pick<AppSettings, 'customProviders' | 'profiles'> | null
+  previousPresetConfig: PresetConfig | null
   setSettings: (s: Partial<AppSettings>) => void
   setPresetImportedSettings: (
     importedSettings: Partial<AppSettings> | unknown,
@@ -217,9 +248,17 @@ interface AppState {
   // 输入
   prompt: string
   setPrompt: (p: string) => void
+  /**
+   * 输入框最后一次的选区（可见文本偏移），供画板等外部入口插入胶囊并覆盖选中内容；未聚焦过时为 null。
+   * 同时记下当时的提示词，提示词被其他途径替换后选区即失效，使用前需比对。
+   */
+  promptSelection: { start: number; end: number; prompt: string } | null
+  setPromptSelection: (selection: { start: number; end: number }) => void
   inputImages: InputImage[]
   addInputImage: (img: InputImage) => void
   replaceInputImage: (idx: number, img: InputImage) => void
+  /** 设置或清除参考图上的 markup 标注层 */
+  setInputImageMarkup: (imageId: string, markupImageId: string | undefined) => void
   removeInputImage: (idx: number) => void
   clearInputImages: () => void
   setInputImages: (imgs: InputImage[], options?: { equivalentImageIds?: Record<string, string> }) => void
@@ -237,7 +276,13 @@ interface AppState {
   reusedTaskApiProfileId: string | null
   reusedTaskApiProfileName: string | null
   reusedTaskApiProfileMissing: boolean
-  setReusedTaskApiProfile: (profileId: string | null, missing?: boolean, profileName?: string | null) => void
+  /** 临时复用其他配置时使用的模型，只在本次复用中生效，不写入该配置 */
+  reusedTaskApiModel: string | null
+  setReusedTaskApiProfile: (profileId: string | null, missing?: boolean, profileName?: string | null, model?: string | null) => void
+  setReusedTaskApiModel: (model: string) => void
+  /** 正在进行的批量提交进度，仅保存在内存中 */
+  batchProgress: BatchProgress | null
+  setBatchProgress: (progress: BatchProgress | null) => void
 
   // 任务列表
   tasks: TaskRecord[]
@@ -281,13 +326,22 @@ interface AppState {
   setDetailTaskId: (id: string | null) => void
   lightboxImageId: string | null
   lightboxImageList: string[]
-  setLightboxImageId: (id: string | null, list?: string[]) => void
+  /** 预览参考图时对应的提示词，按图片在列表中的位置取其评论；为空时不显示评论 */
+  lightboxCommentPrompt: string | null
+  /** 预览参考图时各图片对应的 markup 标注层 image store id；同一参考图在不同任务中的标注不同，需随预览传入 */
+  lightboxMarkupIds: Record<string, string | undefined>
+  setLightboxImageId: (id: string | null, list?: string[], commentPrompt?: string | null, markupIds?: Record<string, string | undefined>) => void
+  /** 画板；baseImageSrc 为画布底图，replaceImageId 为完成后要替换的参考图 */
+  sketchBoard: SketchBoardRequest | null
+  setSketchBoard: (board: SketchBoardRequest | null) => void
   showSettings: boolean
   settingsTabRequest: SettingsTab | null
   setShowSettings: (v: boolean, tab?: SettingsTab) => void
   supportPromptOpen: boolean
   supportPromptDismissed: boolean
   supportPromptSkippedForImportedData: boolean
+  /** 通过链接添加的参考图 id 到原链接，供只接受链接参考图的自定义服务商使用 */
+  imageSourceUrls: Record<string, string>
   setSupportPromptOpen: (v: boolean) => void
   dismissSupportPrompt: () => void
 
@@ -299,6 +353,8 @@ interface AppState {
   confirmDialog: {
     title: string
     message: string
+    /** 显示在 message 下方的自定义内容，过长时可滚动 */
+    content?: ReactNode
     checkbox?: {
       label: string
       defaultChecked?: boolean
@@ -318,22 +374,34 @@ interface AppState {
     messageAlign?: 'left' | 'center'
     tone?: 'danger' | 'warning'
     awaitAction?: boolean
+    /** awaitAction 执行期间确认按钮显示的文字 */
+    busyText?: string
     action?: (checkboxChecked?: boolean) => void | boolean | Promise<void | boolean>
     cancelAction?: (checkboxChecked?: boolean) => void
   } | null
   setConfirmDialog: (d: AppState['confirmDialog']) => void
+
+  // 隐私模式：不持久化，刷新页面后自然退出
+  privacyMode: PrivacyModeState | null
+  /** 每次进入隐私模式时递增，作为弹窗组件的 key，丢弃组件内部打开的弹窗和未保存内容 */
+  privacyModeEpoch: number
+  /** 设置弹窗的 key；导入导出中进入隐私模式时不变，保留进行中的传输状态 */
+  settingsModalEpoch: number
+  togglePrivacyMode: () => void
 }
 
 function isImageReferencedByState(state: AppState, imageId: string) {
-  if (state.inputImages.some((img) => img.id === imageId)) return true
-  if (state.galleryInputDraft?.inputImages.some((img) => img.id === imageId)) return true
+  if (state.inputImages.some((img) => img.id === imageId || img.markupImageId === imageId)) return true
+  if (state.galleryInputDraft?.inputImages.some((img) => img.id === imageId || img.markupImageId === imageId)) return true
+  if (getPrivacySnapshotImageIds(state.privacyMode).includes(imageId)) return true
   if (state.tasks.some((task) =>
     task.inputImageIds.includes(imageId) ||
     task.outputImages.includes(imageId) ||
     task.transparentOriginalImages?.includes(imageId) ||
     task.streamPartialImageIds?.includes(imageId) ||
     task.maskTargetImageId === imageId ||
-    task.maskImageId === imageId
+    task.maskImageId === imageId ||
+    task.markupImageId === imageId
   )) return true
   return legacyImageIds.has(imageId)
 }
@@ -347,6 +415,15 @@ export async function deleteImageIfUnreferenced(imageId: string) {
   }
 }
 
+function forgetImageSourceUrl(imageId: string) {
+  if (!(imageId in useStore.getState().imageSourceUrls)) return
+  useStore.setState((s) => {
+    const imageSourceUrls = { ...s.imageSourceUrls }
+    delete imageSourceUrls[imageId]
+    return { imageSourceUrls }
+  })
+}
+
 async function deleteStoredImageIfUnreferenced(imageId: string) {
   if (isImageReferencedByState(useStore.getState(), imageId)) return
   const [image, thumbnail] = await Promise.all([getImage(imageId), getStoredImageThumbnail(imageId)])
@@ -355,6 +432,7 @@ async function deleteStoredImageIfUnreferenced(imageId: string) {
   await deleteImage(imageId)
   if (!isImageReferencedByState(useStore.getState(), imageId)) {
     deleteImageCacheEntry(imageId)
+    forgetImageSourceUrl(imageId)
     return
   }
 
@@ -365,7 +443,7 @@ async function deleteStoredImageIfUnreferenced(imageId: string) {
   if (thumbnail) {
     await putImageThumbnail(thumbnail)
     cacheThumbnail(thumbnail.id, {
-      dataUrl: thumbnail.thumbnailDataUrl,
+      src: thumbnail.thumbnailDataUrl,
       width: thumbnail.width,
       height: thumbnail.height,
       thumbnailVersion: thumbnail.thumbnailVersion,
@@ -448,7 +526,7 @@ export const useStore = create<AppState>()(
         return {
           settings,
           ...(shouldClearReusedProfile
-            ? { reusedTaskApiProfileId: null, reusedTaskApiProfileName: null, reusedTaskApiProfileMissing: false }
+            ? { reusedTaskApiProfileId: null, reusedTaskApiProfileName: null, reusedTaskApiProfileMissing: false, reusedTaskApiModel: null }
             : {}),
         }
       }),
@@ -483,7 +561,7 @@ export const useStore = create<AppState>()(
             dismissedPresetProviderIds,
             reusedTaskApiProfileId: shouldClearReusedProfile ? null : state.reusedTaskApiProfileId,
             ...(shouldClearReusedProfile
-              ? { reusedTaskApiProfileName: null, reusedTaskApiProfileMissing: false }
+              ? { reusedTaskApiProfileName: null, reusedTaskApiProfileMissing: false, reusedTaskApiModel: null }
               : {}),
           }
         })
@@ -498,6 +576,8 @@ export const useStore = create<AppState>()(
       // Input
       prompt: '',
       setPrompt: (prompt) => set((s) => syncActiveInputDraft(s, { prompt })),
+      promptSelection: null,
+      setPromptSelection: (selection) => set((s) => ({ promptSelection: { ...selection, prompt: s.prompt } })),
       inputImages: [],
       addInputImage: (img) =>
         set((s) => {
@@ -505,20 +585,38 @@ export const useStore = create<AppState>()(
           return syncActiveInputDraft(s, { inputImages: [...s.inputImages, img] })
         }),
       replaceInputImage: (idx, img) => {
-        let removedImageId: string | null = null
+        let removed = null as InputImage | null
         set((s) => {
           if (idx < 0 || idx >= s.inputImages.length) return s
           const previous = s.inputImages[idx]
           if (!previous || previous.id === img.id) return s
           if (s.inputImages.some((item, itemIdx) => itemIdx !== idx && item.id === img.id)) return s
-          removedImageId = previous.id
+          removed = previous
           const inputImages = s.inputImages.map((item, itemIdx) => itemIdx === idx ? img : item)
           return syncActiveInputDraft(s, updateInputDraftImages(s, inputImages, {
             equivalentImageIds: { [previous.id]: img.id },
             clearMissingMask: previous.id === s.maskDraft?.targetImageId,
           }))
         })
-        if (removedImageId) void deleteImageIfUnreferenced(removedImageId)
+        // 换了图片后旧标注对不上新图，随旧图一起清理
+        for (const id of [removed?.id, removed?.markupImageId]) {
+          if (id) void deleteImageIfUnreferenced(id)
+        }
+      },
+      setInputImageMarkup: (imageId, markupImageId) => {
+        let previousMarkupId: string | undefined
+        set((s) => {
+          const target = s.inputImages.find((img) => img.id === imageId)
+          if (!target || target.markupImageId === markupImageId) return s
+          previousMarkupId = target.markupImageId
+          const inputImages = s.inputImages.map((img) => {
+            if (img.id !== imageId) return img
+            const { markupImageId: _previous, ...rest } = img
+            return markupImageId ? { ...rest, markupImageId } : rest
+          })
+          return syncActiveInputDraft(s, { inputImages })
+        })
+        if (previousMarkupId) void deleteImageIfUnreferenced(previousMarkupId)
       },
       removeInputImage: (idx) =>
         set((s) => {
@@ -582,11 +680,16 @@ export const useStore = create<AppState>()(
       reusedTaskApiProfileId: null,
       reusedTaskApiProfileName: null,
       reusedTaskApiProfileMissing: false,
-      setReusedTaskApiProfile: (profileId, missing = false, profileName = null) => set({
+      reusedTaskApiModel: null,
+      setReusedTaskApiProfile: (profileId, missing = false, profileName = null, model = null) => set({
         reusedTaskApiProfileId: profileId,
         reusedTaskApiProfileName: profileName,
         reusedTaskApiProfileMissing: missing,
+        reusedTaskApiModel: profileId ? model : null,
       }),
+      setReusedTaskApiModel: (reusedTaskApiModel) => set({ reusedTaskApiModel }),
+      batchProgress: null,
+      setBatchProgress: (batchProgress) => set({ batchProgress }),
 
       // Tasks
       tasks: [],
@@ -695,9 +798,21 @@ export const useStore = create<AppState>()(
       },
       lightboxImageId: null,
       lightboxImageList: [],
-      setLightboxImageId: (lightboxImageId, list) => {
+      lightboxCommentPrompt: null,
+      lightboxMarkupIds: {},
+      setLightboxImageId: (lightboxImageId, list, commentPrompt = null, markupIds = {}) => {
         if (lightboxImageId) dismissAllTooltips()
-        set({ lightboxImageId, lightboxImageList: list ?? (lightboxImageId ? [lightboxImageId] : []) })
+        set({
+          lightboxImageId,
+          lightboxImageList: list ?? (lightboxImageId ? [lightboxImageId] : []),
+          lightboxCommentPrompt: lightboxImageId ? commentPrompt : null,
+          lightboxMarkupIds: lightboxImageId ? markupIds : {},
+        })
+      },
+      sketchBoard: null,
+      setSketchBoard: (sketchBoard) => {
+        if (sketchBoard) dismissAllTooltips()
+        set({ sketchBoard })
       },
       showSettings: false,
       settingsTabRequest: null,
@@ -712,6 +827,7 @@ export const useStore = create<AppState>()(
       supportPromptOpen: false,
       supportPromptDismissed: false,
       supportPromptSkippedForImportedData: false,
+      imageSourceUrls: {},
       setSupportPromptOpen: (supportPromptOpen) => set({ supportPromptOpen }),
       dismissSupportPrompt: () => set({ supportPromptOpen: false, supportPromptDismissed: true }),
 
@@ -732,9 +848,67 @@ export const useStore = create<AppState>()(
         if (confirmDialog) dismissAllTooltips()
         set({ confirmDialog })
       },
+
+      privacyMode: null,
+      privacyModeEpoch: 0,
+      settingsModalEpoch: 0,
+      togglePrivacyMode: () => {
+        const state = get()
+        if (state.privacyMode) {
+          set({
+            privacyMode: null,
+            ...restorePrivacyInputState(state.privacyMode.inputSnapshot),
+          })
+          const stopped = state.privacyMode.stoppedBatchPrompts
+          if (stopped > 0) get().showToast(`进入隐私模式时停止了批量提交，${stopped} 条提示词未提交`, 'info')
+          return
+        }
+
+        const privacyMode = createPrivacyModeState(state, Date.now())
+        // 继续批量会用旧提示词创建新的可见任务；已开始的任务继续执行
+        if (state.batchProgress) endBatch(activeBatchId)
+        dismissAllTooltips()
+        // 导入导出进行中保留设置弹窗和其中的确认框，传输期间的限制与提示照旧，其余照常进入隐私模式
+        const keepSettings = Boolean(useSettingsDataTransfer.getState().mode)
+        set({
+          privacyMode,
+          privacyModeEpoch: state.privacyModeEpoch + 1,
+          appMode: 'gallery',
+          ...clearInputDraftState(),
+          galleryInputDraft: null,
+          reusedTaskApiProfileId: null,
+          reusedTaskApiProfileName: null,
+          reusedTaskApiProfileMissing: false,
+          reusedTaskApiModel: null,
+          searchQuery: '',
+          filterStatus: 'all',
+          filterFavorite: false,
+          activeFavoriteCollectionId: null,
+          selectedTaskIds: [],
+          selectedFavoriteCollectionIds: [],
+          // 直接关闭，不经过各弹窗的关闭流程，不保存草稿也不弹出确认
+          ...(keepSettings ? {} : {
+            showSettings: false,
+            settingsTabRequest: null,
+            confirmDialog: null,
+            settingsModalEpoch: state.settingsModalEpoch + 1,
+          }),
+          detailTaskId: null,
+          lightboxImageId: null,
+          lightboxImageList: [],
+          lightboxCommentPrompt: null,
+          lightboxMarkupIds: {},
+          sketchBoard: null,
+          favoritePickerTaskIds: null,
+          isManageCollectionsModalOpen: false,
+          toast: null,
+        })
+      },
     }),
     {
       name: 'gpt-image-playground',
+      // 与 zustand 默认存储（window.localStorage）一致；客户端改用预加载到内存的 SQLite kv
+      storage: createJSONStorage(() => isTauri ? tauriStorage : window.localStorage),
       version: 2,
       migrate: migratePersistedState,
       partialize: getPersistedState,
@@ -765,12 +939,14 @@ export function getCodexCliPromptKey(settings: AppSettings): string {
 }
 
 function isRunningOpenAITask(task: TaskRecord) {
-  return task.status === 'running' && (task.apiProvider ?? 'openai') !== 'fal'
+  return task.status === 'running' && (task.apiProvider ?? 'openai') !== 'fal' && !task.customTaskId
 }
 
-function isAsyncCustomProviderTask(settings: AppSettings, provider: string, hasInputImages: boolean) {
-  const customProvider = getCustomProviderDefinition(settings, provider)
-  if (!customProvider?.poll) return false
+function isAsyncCustomProviderTask(settings: AppSettings, profile: ApiProfile, hasInputImages: boolean) {
+  const definition = getCustomProviderDefinition(settings, profile.provider)
+  if (!definition) return false
+  const customProvider = resolveCustomProviderModel(definition, profile.model)
+  if (!customProvider.poll) return false
   const submitMapping = hasInputImages && customProvider.editSubmit ? customProvider.editSubmit : customProvider.submit
   return Boolean(submitMapping.taskIdPath)
 }
@@ -788,8 +964,9 @@ function failOpenAITaskIfStillRunning(taskId: string, error: string, now = Date.
   updateTaskInStore(taskId, {
     ...createTaskErrorPatch(task, error, now),
     falRecoverable: false,
-    elapsed: Math.max(0, now - task.createdAt),
+    elapsed: Math.max(0, now - (task.startedAt ?? task.createdAt)),
   })
+  showTaskFailureNotification(task)
   return true
 }
 
@@ -799,11 +976,11 @@ function scheduleOpenAIWatchdog(taskId: string, timeoutSeconds: number, profile?
   if (!task || !isRunningOpenAITask(task)) return
 
   const timeoutMs = Math.max(0, timeoutSeconds * 1000)
-  const remainingMs = Math.max(0, timeoutMs - (Date.now() - task.createdAt))
+  const remainingMs = Math.max(0, timeoutMs - (Date.now() - (task.startedAt ?? task.createdAt)))
   const timer = setTimeout(() => {
     openAIWatchdogTimers.delete(taskId)
     const failed = failOpenAITaskIfStillRunning(taskId, createOpenAITimeoutError(timeoutSeconds, profile))
-    if (failed) useStore.getState().showToast('OpenAI 任务请求超时', 'error')
+    if (failed && !isTaskHiddenByPrivacyMode(task)) useStore.getState().showToast('OpenAI 任务请求超时', 'error')
   }, remainingMs)
   openAIWatchdogTimers.set(taskId, timer)
 }
@@ -811,11 +988,13 @@ function scheduleOpenAIWatchdog(taskId: string, timeoutSeconds: number, profile?
 function usesConcurrentImageRequests(settings: AppSettings, profile: ApiProfile, params: TaskParams, hasInputImages: boolean) {
   const n = params.n > 0 ? params.n : 1
   if (n <= 1) return false
+  if (profile.provider === 'google') return true
+  if (getImageModelFamily(profile)) return false
   if (profile.provider === 'openai') {
     if (profile.apiMode === 'responses') return true
-    return profile.apiMode === 'images' && (profile.codexCli || profile.streamImages)
+    return profile.apiMode === 'images' && (profile.codexCli || params.output_format === 'svg' || (profile.streamImages && params.output_format !== 'gif'))
   }
-  return profile.provider !== 'fal' && profile.codexCli && !isAsyncCustomProviderTask(settings, profile.provider, hasInputImages)
+  return profile.provider !== 'fal' && (profile.codexCli || params.output_format === 'svg') && !isAsyncCustomProviderTask(settings, profile, hasInputImages)
 }
 
 export function taskHasOutputErrors(task: Pick<TaskRecord, 'outputErrors'>) {
@@ -831,7 +1010,7 @@ export function taskMatchesFilterStatus(task: TaskRecord, filterStatus: AppState
 export function taskMatchesSearchQuery(task: TaskRecord, query: string) {
   const q = query.trim().toLowerCase()
   if (!q) return true
-  const prompt = (task.prompt || '').toLowerCase()
+  const prompt = getTaskPromptText(task.prompt || '', task.inputImageIds.length).toLowerCase()
   const paramStr = JSON.stringify(task.params).toLowerCase()
   const errorStr = [task.error, ...(task.outputErrors ?? []).map((item) => item.error)].filter(Boolean).join('\n').toLowerCase()
   return prompt.includes(q) || paramStr.includes(q) || errorStr.includes(q)
@@ -867,35 +1046,22 @@ function getFalRecoveryProfile(settings: AppSettings, task: TaskRecord) {
 
 function getCustomRecoveryProfile(settings: AppSettings, task: TaskRecord) {
   const taskProfile = getTaskApiProfile(settings, task)
-  if (taskProfile && taskProfile.provider === task.apiProvider && taskProfile.provider !== 'openai' && taskProfile.provider !== 'fal') return taskProfile
+  if (taskProfile && taskProfile.provider === task.apiProvider && taskProfile.provider !== 'fal') return { ...taskProfile, model: task.apiModel || taskProfile.model }
   return null
 }
 
 export function getTaskApiProfile(settings: AppSettings, task: TaskRecord): ApiProfile | null {
   const normalized = normalizeSettings(settings)
   if (!task.apiProfileId) return null
-  return normalized.profiles.find((profile) => profile.id === task.apiProfileId) ?? null
+  const profile = normalized.profiles.find((item) => item.id === task.apiProfileId)
+  // 任务记录的模型仍在配置的模型列表中时，沿用任务提交时的模型
+  return profile ? resolveApiProfileModel(profile, task.apiModel, getCustomProviderDefinition(normalized, profile.provider)) : null
 }
 
-function createSettingsForApiProfile(settings: AppSettings, profile: ApiProfile): AppSettings {
-  const normalized = normalizeSettings(settings)
-  return normalizeSettings({
-    ...normalized,
-    baseUrl: profile.baseUrl,
-    apiKey: profile.apiKey,
-    model: profile.model,
-    timeout: profile.timeout,
-    apiMode: profile.apiMode,
-    codexCli: profile.codexCli,
-    apiProxy: profile.apiProxy,
-    profiles: normalized.profiles.map((item) => item.id === profile.id ? profile : item),
-    activeProfileId: profile.id,
-  })
-}
-
-function getReusedTaskApiProfile(settings: AppSettings, profileId: string | null): ApiProfile | null {
+function getReusedTaskApiProfile(settings: AppSettings, profileId: string | null, model: string | null): ApiProfile | null {
   if (!profileId) return null
-  return normalizeSettings(settings).profiles.find((profile) => profile.id === profileId) ?? null
+  const profile = normalizeSettings(settings).profiles.find((item) => item.id === profileId)
+  return profile ? resolveApiProfileModel(profile, model ?? undefined, getCustomProviderDefinition(settings, profile.provider)) : null
 }
 
 function getTaskApiProfileName(task: TaskRecord) {
@@ -904,11 +1070,13 @@ function getTaskApiProfileName(task: TaskRecord) {
 
 function isNetworkRecoverableError(err: unknown) {
   if (typeof DOMException !== 'undefined' && err instanceof DOMException && err.name === 'AbortError') return true
+  if (err instanceof FetchConnectError) return true
   const message = err instanceof Error ? err.message : String(err)
   return /abort|network|failed to fetch|fetch failed|load failed|timeout|连接|断开|中断/i.test(message)
 }
 
 function isApiRequestNetworkError(err: unknown): boolean {
+  if (err instanceof FetchConnectError) return true
   if (err instanceof TypeError) {
     const message = err.message.toLowerCase()
     return /failed to fetch|fetch failed|load failed|networkerror|network request failed/i.test(message)
@@ -930,14 +1098,23 @@ function getApiRequestNetworkErrorHint(
 
   const elapsedSeconds = Math.max(0, (Date.now() - createdAt) / 1000)
 
+  // 客户端的连接错误已由 Rust 侧给出具体原因，只有兜底的“无法连接到服务器”仍追加通用提示；
+  // 超时、域名解析等发生在建立连接时，与网关超时无关，只有连接被重置或未响应就关闭才可能是等待较久后被网关断开
+  if (err instanceof FetchConnectError && !err.message.startsWith('无法连接到服务器')) {
+    if (elapsedSeconds <= 15 || !/^(连接被服务器重置|服务器未返回响应就关闭了连接)/.test(err.message)) return null
+  }
+
   if (elapsedSeconds <= 15) {
-    if (usesApiProxy) {
+    // 客户端忽略已保存的代理设置
+    if (usesApiProxy && !isTauri) {
       return '提示：请求立即失败，请检查 API 代理服务是否正常运行。'
     }
     const unsupportedApiHint = profile?.provider === 'openai'
       ? `\n· API 不支持 ${getApiModeApiName(profile.apiMode)}`
       : ''
-    return `提示：请求立即失败，可能原因：\n· API 服务器不可达或地址有误，请检查 API URL 是否正确、服务是否正常运行${unsupportedApiHint}\n· 接口不支持浏览器跨域请求，可使用 Docker 部署版或本地运行版并配置 API 代理解决`
+    // 客户端不受跨域限制，不提示跨域原因
+    const corsHint = isTauri ? '' : '\n· 接口不支持浏览器跨域请求，可使用 Docker 部署版或本地运行版并配置 API 代理解决'
+    return `提示：请求立即失败，可能原因：\n· API 服务器不可达或地址有误，请检查 API URL 是否正确、服务是否正常运行${unsupportedApiHint}${corsHint}`
   }
 
   if (elapsedSeconds >= 55 && elapsedSeconds <= 75) {
@@ -1067,8 +1244,10 @@ async function completeRecoveredFalTask(task: TaskRecord, result: Awaited<Return
     ...createTaskDonePatch(task, Date.now()),
     falRecoverable: false,
   })
-  useStore.getState().showToast(`fal.ai 任务已恢复，共 ${outputIds.length} 张图片`, 'success')
-  if (!isAgentTask(task)) showTaskCompletionNotification('图像生成完成', `fal.ai 任务已恢复，共 ${outputIds.length} 张图片。`)
+  if (!isTaskHiddenByPrivacyMode(task)) {
+    useStore.getState().showToast(`fal.ai 任务已恢复，共 ${outputIds.length} 张图片`, 'success')
+    if (!isAgentTask(task)) showTaskCompletionNotification('图像生成完成', `fal.ai 任务已恢复，共 ${outputIds.length} 张图片。`)
+  }
 }
 
 async function recoverFalTask(taskId: string) {
@@ -1095,11 +1274,13 @@ async function recoverFalTask(taskId: string) {
     }
 
     clearFalRecoveryTimer(taskId)
+    const error = getFalErrorMessage(err) ?? (err instanceof Error ? err.message : String(err))
     updateTaskInStore(taskId, {
-      ...createTaskErrorPatch(task, getFalErrorMessage(err) ?? (err instanceof Error ? err.message : String(err)), Date.now()),
+      ...createTaskErrorPatch(task, error, Date.now()),
       ...getRawErrorPayload(err),
       falRecoverable: false,
     })
+    showTaskFailureNotification(task)
   }
 }
 
@@ -1124,21 +1305,10 @@ export async function initStore() {
     .map((task) => putTask(task)))
   useStore.getState().setTasks(tasks)
   showSupportPromptForExistingLocalData(tasks)
+  // 客户端关闭确认用同样的判断跳过这些任务，它们重启后会继续查询结果
   for (const task of tasks) {
-    if (
-      task.apiProvider === 'fal' &&
-      task.falRequestId &&
-      task.falEndpoint &&
-      (task.status === 'running' || task.falRecoverable)
-    ) {
-      scheduleFalRecovery(task.id, 0)
-    }
-    if (
-      task.customTaskId &&
-      (task.status === 'running' || task.customRecoverable)
-    ) {
-      scheduleCustomRecovery(task.id, 0)
-    }
+    if (isFalRecoverableTask(task)) scheduleFalRecovery(task.id, 0)
+    if (isCustomRecoverableTask(task)) scheduleCustomRecovery(task.id, 0)
   }
 
   // 收集所有任务引用的图片 id
@@ -1163,7 +1333,13 @@ export async function initStore() {
       await deleteImage(imgId)
     }
   }
-  scheduleThumbnailBackfill(referencedImageIds)
+  const imageSourceUrls = useStore.getState().imageSourceUrls
+  if (Object.keys(imageSourceUrls).some((id) => !referencedIds.has(id))) {
+    useStore.setState({ imageSourceUrls: Object.fromEntries(Object.entries(imageSourceUrls).filter(([id]) => referencedIds.has(id))) })
+  }
+  void scheduleMissingThumbnailBackfill(referencedImageIds)
+  // 网页版旧数据的原图和缩略图以 dataUrl 字符串保存，首屏加载后在后台逐条转成 Blob
+  if (!isTauri) setTimeout(() => void migrateImagesToBlob(), 2_000)
 
   const restoredInputImages: InputImage[] = []
   for (const img of persistedInputImages) {
@@ -1219,16 +1395,29 @@ export async function initStore() {
 
 }
 
-/** 提交新任务 */
-export async function submitTask(options: { allowFullMask?: boolean; useCurrentApiProfileWhenReusedMissing?: boolean } = {}) {
-  const { settings, prompt, inputImages, maskDraft, params, reusedTaskApiProfileId, reusedTaskApiProfileName, reusedTaskApiProfileMissing, showToast, setConfirmDialog } =
-    useStore.getState()
+/** 命令行直接给出的提示词和参考图：提交时不读写输入区、遮罩和复用配置状态；多条提示词按批量提交 */
+export interface SubmitInput {
+  prompts: string[]
+  inputImages: InputImage[]
+}
+
+/** 提交新任务，返回已开始的任务 id；批量提交时等全部任务结束后才返回 */
+export async function submitTask(options: { allowFullMask?: boolean; useCurrentApiProfileWhenReusedMissing?: boolean; input?: SubmitInput } = {}): Promise<string[]> {
+  const state = useStore.getState()
+  const { settings, params, showToast, setConfirmDialog } = state
+  const input = options.input
+  const prompt = input ? input.prompts[0] ?? '' : state.prompt
+  const inputImages = input?.inputImages ?? state.inputImages
+  const maskDraft = input ? null : state.maskDraft
+  const { reusedTaskApiProfileId, reusedTaskApiProfileName, reusedTaskApiProfileMissing, reusedTaskApiModel } = input
+    ? { reusedTaskApiProfileId: null, reusedTaskApiProfileName: null, reusedTaskApiProfileMissing: false, reusedTaskApiModel: null }
+    : state
 
   const normalizedSettings = normalizeSettings(settings)
   let activeProfile = getActiveApiProfile(settings)
   let requestSettings = createSettingsForApiProfile(normalizedSettings, activeProfile)
   if (normalizedSettings.reuseTaskApiProfileTemporarily && (reusedTaskApiProfileId || reusedTaskApiProfileMissing)) {
-    const reusedProfile = getReusedTaskApiProfile(normalizedSettings, reusedTaskApiProfileId)
+    const reusedProfile = getReusedTaskApiProfile(normalizedSettings, reusedTaskApiProfileId, reusedTaskApiModel)
     if (!reusedProfile) {
       if (options.useCurrentApiProfileWhenReusedMissing) {
         useStore.getState().setReusedTaskApiProfile(null)
@@ -1242,7 +1431,7 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
         void submitTask({ ...options, useCurrentApiProfileWhenReusedMissing: true })
       },
         })
-        return
+        return []
       }
     } else {
       activeProfile = reusedProfile
@@ -1253,13 +1442,30 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   if (validateApiProfile(activeProfile)) {
     showToast(`请先完善请求 API 配置：${validateApiProfile(activeProfile)}`, 'error')
     useStore.getState().setShowSettings(true)
-    return
+    return []
   }
 
   if (!prompt.trim()) {
     showToast('请输入提示词', 'error')
-    return
+    return []
   }
+
+  const normalizedParams = normalizeParamsForSettings(params, requestSettings, { hasInputImages: inputImages.length > 0 })
+  // 编辑接口不接受 SVG 参数；GIF 实测在编辑时也能正常生成
+  if (inputImages.length > 0 && normalizedParams.output_format === 'svg') {
+    showToast('SVG 只能用于文生图，请移除参考图或切换输出格式', 'error')
+    return []
+  }
+
+  const batchPrompts = input && input.prompts.length > 1
+    ? input.prompts
+    : normalizedSettings.showBatchPrompt && normalizedSettings.batchPromptEnabled ? splitBatchPrompts(prompt) : []
+  if (useStore.getState().batchProgress) {
+    showToast('批量任务进行中，请等待完成或停止后再提交', 'error')
+    return []
+  }
+  // 检查通过后立即占位，避免后续 await 期间重复提交启动第二批
+  const batchId = batchPrompts.length ? beginBatch(batchPrompts.length) : 0
 
   let orderedInputImages = inputImages
   let maskImageId: string | null = null
@@ -1279,7 +1485,8 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
             void submitTask({ allowFullMask: true })
           },
         })
-        return
+        endBatch(batchId)
+        return []
       }
       maskImageId = await storeImage(maskDraft.maskDataUrl, 'mask')
       cacheImage(maskImageId, maskDraft.maskDataUrl)
@@ -1289,74 +1496,190 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
         useStore.getState().clearMaskDraft()
       }
       showToast(err instanceof Error ? err.message : String(err), 'error')
-      return
+      endBatch(batchId)
+      return []
     }
   }
 
   // 持久化输入图片到 IndexedDB（此前只在内存缓存中）
-  for (const img of orderedInputImages) {
-    await storeImage(img.dataUrl)
+  let taskInputImages = orderedInputImages
+  try {
+    taskInputImages = await persistTaskInputImages(orderedInputImages, true)
+  } catch (err) {
+    console.error('保存参考图失败', err)
+    endBatch(batchId)
+    showToast(`保存参考图失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    return []
   }
 
-  const normalizedParams = normalizeParamsForSettings(params, requestSettings, { hasInputImages: orderedInputImages.length > 0 })
-  const shouldUseTransparentOutput = (normalizedParams.output_format === 'png' || normalizedParams.output_format === 'webp') && normalizedParams.transparent_output
+  const shouldUseTransparentOutput = normalizedParams.transparent_output && supportsTransparentOutput(requestSettings, activeProfile, normalizedParams.output_format)
   const taskParams = shouldUseTransparentOutput
     ? getTransparentRequestParams(normalizedParams)
     : { ...normalizedParams, transparent_output: false }
-  const transparentMeta = taskParams.transparent_output && activeProfile.transparentBackgroundMethod === 'local'
-    ? createTransparentOutputMeta(prompt.trim())
-    : null
   const normalizedParamPatch = getChangedParams(params, taskParams)
   if (Object.keys(normalizedParamPatch).length) {
     useStore.getState().setParams(normalizedParamPatch)
   }
 
-  const taskId = genId()
-  const task: TaskRecord = {
-    id: taskId,
-    prompt: prompt.trim(),
-    params: taskParams,
-    apiProvider: activeProfile.provider,
-    apiProfileId: activeProfile.id,
-    apiProfileName: activeProfile.name,
-    apiMode: activeProfile.apiMode,
-    apiModel: activeProfile.model,
-    inputImageIds: orderedInputImages.map((i) => i.id),
-    maskTargetImageId,
-    maskImageId,
-    transparentOutput: transparentMeta?.transparentOutput,
-    transparentPrompt: transparentMeta?.effectivePrompt,
-    outputImages: [],
-    status: 'running',
-    error: null,
-    createdAt: Date.now(),
-    finishedAt: null,
-    elapsed: null,
+  // 命令行提交与当前界面无关，不加入收藏夹
+  const saveToFavorite = !input && normalizedSettings.saveTasksToActiveFavoriteCollection
+  const taskIds: string[] = []
+  const startTask = async (taskPrompt: string) => {
+    // 按点击提交时所在的收藏夹页决定；创建时该收藏夹已被删除则加入默认收藏夹
+    const favoritePatch = saveToFavorite
+      ? getNewTaskFavoritePatch({
+        filterFavorite: state.filterFavorite,
+        activeFavoriteCollectionId: state.activeFavoriteCollectionId,
+        favoriteCollections: useStore.getState().favoriteCollections,
+        defaultFavoriteCollectionId: useStore.getState().defaultFavoriteCollectionId,
+      })
+      : null
+    // SVG 和 GIF 无法本地抠图，只能使用接口原生透明背景
+    const transparentMeta = taskParams.transparent_output && activeProfile.transparentBackgroundMethod === 'local' && !isVectorOrAnimatedFormat(taskParams.output_format)
+      ? createTransparentOutputMeta(taskPrompt)
+      : null
+    const task: TaskRecord = {
+      id: genId(),
+      prompt: taskPrompt,
+      params: taskParams,
+      paramSupport: getTaskParamSupport(requestSettings, activeProfile),
+      apiProvider: activeProfile.provider,
+      apiProfileId: activeProfile.id,
+      apiProfileName: activeProfile.name,
+      apiMode: activeProfile.apiMode,
+      apiModel: activeProfile.model,
+      inputImageIds: taskInputImages.map((i) => i.id),
+      maskTargetImageId,
+      maskImageId,
+      markupImageId: taskInputImages[0]?.markupImageId ?? null,
+      transparentOutput: transparentMeta?.transparentOutput,
+      transparentPrompt: transparentMeta?.effectivePrompt,
+      outputImages: [],
+      status: 'running',
+      error: null,
+      createdAt: Date.now(),
+      finishedAt: null,
+      elapsed: null,
+      ...favoritePatch,
+    }
+
+    useStore.getState().setTasks([task, ...useStore.getState().tasks])
+    await putTask(task)
+    if (batchId) batchTaskIds.add(task.id)
+    taskIds.push(task.id)
+    // 异步调用 API
+    executeTask(task.id)
+    return task.id
   }
 
-  const latestTasks = useStore.getState().tasks
-  useStore.getState().setTasks([task, ...latestTasks])
-  await putTask(task)
-  useStore.getState().showToast('任务已提交', 'success')
-
-  if (settings.clearInputAfterSubmit) {
-    useStore.getState().setPrompt('')
-    useStore.getState().clearInputImages()
+  if (batchPrompts.length) {
+    useStore.getState().showToast(`已开始批量提交 ${batchPrompts.length} 条提示词`, 'success')
+  } else {
+    await startTask(prompt.trim())
+    useStore.getState().showToast('任务已提交', 'success')
   }
-  useStore.getState().setReusedTaskApiProfile(null)
 
-  // 异步调用 API
-  executeTask(taskId)
+  if (!input) {
+    if (settings.clearInputAfterSubmit) {
+      useStore.getState().setPrompt('')
+      useStore.getState().clearInputImages()
+    }
+    useStore.getState().setReusedTaskApiProfile(null)
+  }
+
+  if (batchPrompts.length) {
+    const limit = normalizedSettings.batchPromptMode === 'queue'
+      ? 1
+      : normalizedSettings.batchPromptConcurrencyLimited ? normalizedSettings.batchPromptConcurrency : batchPrompts.length
+    await runBatchPrompts(batchId, batchPrompts, limit, startTask)
+  }
+  return taskIds
+}
+
+// 当前批量的标识，停止或结束时递增使旧批量失效；批量任务不单独弹出完成提示和失败详情
+let activeBatchId = 0
+const batchTaskIds = new Set<string>()
+
+function beginBatch(total: number) {
+  activeBatchId += 1
+  useStore.getState().setBatchProgress({ total, started: 0, finished: 0 })
+  return activeBatchId
+}
+
+function endBatch(batchId: number) {
+  if (!batchId || batchId !== activeBatchId) return
+  activeBatchId += 1
+  // 停止后仍在运行的任务恢复单独的完成提示和失败详情
+  batchTaskIds.clear()
+  useStore.getState().setBatchProgress(null)
+}
+
+/** 等待任务结束（完成、失败或被删除）或批量被停止；断线待恢复的任务也视为结束，避免卡住队列 */
+export function waitForTaskSettled(taskId: string, isCancelled: () => boolean) {
+  const isSettled = (tasks: TaskRecord[]) => isCancelled() || tasks.find((item) => item.id === taskId)?.status !== 'running'
+  return new Promise<void>((resolve) => {
+    if (isSettled(useStore.getState().tasks)) {
+      resolve()
+      return
+    }
+    const unsubscribe = useStore.subscribe((state) => {
+      if (!isSettled(state.tasks)) return
+      unsubscribe()
+      resolve()
+    })
+  })
+}
+
+async function runBatchPrompts(batchId: number, prompts: string[], limit: number, startTask: (taskPrompt: string) => Promise<string>) {
+  const isStopped = () => batchId !== activeBatchId
+  const total = prompts.length
+  let started = 0
+  let finished = 0
+  let failed = 0
+  await runWithConcurrency(prompts, limit, async (taskPrompt) => {
+    started += 1
+    useStore.getState().setBatchProgress({ total, started, finished })
+    try {
+      const taskId = await startTask(taskPrompt)
+      await waitForTaskSettled(taskId, isStopped)
+      if (useStore.getState().tasks.find((item) => item.id === taskId)?.status === 'error') failed += 1
+    } catch (err) {
+      failed += 1
+      console.error('批量提交任务失败', err)
+    }
+    finished += 1
+    if (!isStopped()) useStore.getState().setBatchProgress({ total, started, finished })
+  }, isStopped)
+  if (isStopped()) return
+
+  endBatch(batchId)
+  const message = failed > 0 ? `批量生成完成：成功 ${total - failed} 条，失败 ${failed} 条` : `批量生成完成，共 ${total} 条`
+  useStore.getState().showToast(message, failed > 0 ? 'error' : 'success')
+  showTaskCompletionNotification('批量生成完成', `${message}。`)
+}
+
+/** 停止批量提交：立即结束批量状态，不再启动剩余提示词，已开始的任务继续执行 */
+export function stopBatchPrompts() {
+  const progress = useStore.getState().batchProgress
+  if (!progress) return
+  endBatch(activeBatchId)
+  useStore.getState().showToast(`已停止批量提交，共提交 ${progress.started} / ${progress.total} 条，已开始的任务会继续完成`, 'info')
+}
+
+function addInputImageReferencedIds(target: Set<string>, img: InputImage) {
+  target.add(img.id)
+  if (img.markupImageId) target.add(img.markupImageId)
 }
 
 function addInputDraftReferencedImageIds(target: Set<string>, draft: InputDraft | null) {
   if (!draft) return
-  for (const img of draft.inputImages) target.add(img.id)
+  for (const img of draft.inputImages) addInputImageReferencedIds(target, img)
 }
 
 function addTaskReferencedImageIds(target: Set<string>, task: TaskRecord) {
   for (const id of task.inputImageIds || []) target.add(id)
   if (task.maskImageId) target.add(task.maskImageId)
+  if (task.markupImageId) target.add(task.markupImageId)
   for (const id of task.outputImages || []) target.add(id)
   for (const id of task.transparentOriginalImages || []) {
     if (id) target.add(id)
@@ -1418,11 +1741,11 @@ async function deleteUnreferencedImageIds(imageIds: Iterable<string>) {
   const candidates = Array.from(new Set(Array.from(imageIds).filter(Boolean)))
   if (candidates.length === 0) return
 
-  const { tasks, inputImages, galleryInputDraft } = useStore.getState()
-  const stillUsed = new Set<string>()
+  const { tasks, inputImages, galleryInputDraft, privacyMode } = useStore.getState()
+  const stillUsed = new Set<string>(getPrivacySnapshotImageIds(privacyMode))
   for (const task of tasks) addTaskReferencedImageIds(stillUsed, task)
   addInputDraftReferencedImageIds(stillUsed, galleryInputDraft)
-  for (const img of inputImages) stillUsed.add(img.id)
+  for (const img of inputImages) addInputImageReferencedIds(stillUsed, img)
 
   for (const imgId of candidates) {
     if (stillUsed.has(imgId)) continue
@@ -1430,13 +1753,13 @@ async function deleteUnreferencedImageIds(imageIds: Iterable<string>) {
   }
 }
 
-async function persistTaskStreamPartialImage(taskId: string, dataUrl: string) {
+async function persistTaskStreamPartialImage(taskId: string, dataUrl: string, execution?: symbol) {
   try {
     const imgId = await storeImage(dataUrl, 'generated')
     cacheImage(imgId, dataUrl)
 
     const latestTask = useStore.getState().tasks.find((task) => task.id === taskId)
-    if (!latestTask || latestTask.status === 'done') {
+    if (!latestTask || latestTask.status === 'done' || (execution && taskExecutions.get(taskId) !== execution)) {
       await deleteUnreferencedImageIds([imgId])
       return
     }
@@ -1453,13 +1776,18 @@ async function executeTask(taskId: string) {
   const { settings } = useStore.getState()
   const task = useStore.getState().tasks.find((t) => t.id === taskId)
   if (!task) return
+  const execution = Symbol(taskId)
+  taskExecutions.set(taskId, execution)
   const taskProfile = getTaskApiProfile(settings, task)
   if (!taskProfile && task.apiProfileId) {
+    const error = '找不到此任务所使用的 API 配置。'
     updateTaskInStore(taskId, {
-      ...createTaskErrorPatch(task, '找不到此任务所使用的 API 配置。', Date.now()),
+      ...createTaskErrorPatch(task, error, Date.now()),
       falRecoverable: false,
       customRecoverable: false,
     })
+    showTaskFailureNotification(task)
+    taskExecutions.delete(taskId)
     return
   }
   const activeProfile = taskProfile ?? getActiveApiProfile(settings)
@@ -1474,7 +1802,7 @@ async function executeTask(taskId: string) {
 
   if (
     taskProvider !== 'fal' &&
-    !isAsyncCustomProviderTask(requestSettings, taskProvider, task.inputImageIds.length > 0) &&
+    !isAsyncCustomProviderTask(requestSettings, activeProfile, task.inputImageIds.length > 0) &&
     !usesConcurrentImageRequests(requestSettings, activeProfile, task.params, task.inputImageIds.length > 0)
   ) {
     scheduleOpenAIWatchdog(taskId, activeProfile.timeout, activeProfile)
@@ -1493,6 +1821,8 @@ async function executeTask(taskId: string) {
       maskDataUrl = await ensureImageCached(task.maskImageId)
       if (!maskDataUrl) throw new Error('遮罩图片已不存在')
     }
+    const markupDataUrl = task.markupImageId ? await ensureImageCached(task.markupImageId) : undefined
+    if (task.markupImageId && !markupDataUrl) throw new Error('标注图片已不存在')
 
     const requestPrompt = task.transparentOutput && task.transparentPrompt
       ? task.transparentPrompt
@@ -1504,9 +1834,16 @@ async function executeTask(taskId: string) {
       params: task.params,
       nativeTransparentBackground: task.params.transparent_output && !task.transparentOutput,
       inputImageDataUrls: inputDataUrls,
+      inputImageUrls: task.inputImageIds.map((id) => useStore.getState().imageSourceUrls[id] ?? null),
       maskDataUrl,
+      markupDataUrl,
       skipCodexCliSizePrompt: task.sourceMode === 'agent',
+      onPromptHintsPrepared: (promptHints) => {
+        if (taskExecutions.get(taskId) !== execution) return
+        updateTaskInStore(taskId, { promptHints })
+      },
       onFalRequestEnqueued: (request) => {
+        if (taskExecutions.get(taskId) !== execution) return
         falRequestInfo = request
         updateTaskInStore(taskId, {
           falRequestId: request.requestId,
@@ -1515,6 +1852,7 @@ async function executeTask(taskId: string) {
         })
       },
       onCustomTaskEnqueued: (request) => {
+        if (taskExecutions.get(taskId) !== execution) return
         customTaskInfo = request
         updateTaskInStore(taskId, {
           customTaskId: request.taskId,
@@ -1522,12 +1860,14 @@ async function executeTask(taskId: string) {
         })
       },
       onPartialImage: (partial) => {
+        if (taskExecutions.get(taskId) !== execution) return
         useStore.getState().setTaskStreamPreview(taskId, partial.image, partial.requestIndex)
-        void persistTaskStreamPartialImage(taskId, partial.image)
+        void persistTaskStreamPartialImage(taskId, partial.image, execution)
       },
     })
 
     const latestBeforeSuccess = useStore.getState().tasks.find((t) => t.id === taskId)
+    if (taskExecutions.get(taskId) !== execution) return
     if (!latestBeforeSuccess || latestBeforeSuccess.status !== 'running') {
       useStore.getState().setTaskStreamPreview(taskId)
       return
@@ -1552,7 +1892,7 @@ async function executeTask(taskId: string) {
       (revisedPrompt) => revisedPrompt?.trim() && revisedPrompt.trim() !== requestPrompt.trim(),
     )
     const hasRevisedPromptValue = shouldStoreRevisedPrompts && revisedPrompts?.some((revisedPrompt) => revisedPrompt?.trim())
-    if (taskProvider === 'openai' && activeProfile.apiMode === 'responses' && !activeProfile.codexCli) {
+    if (taskExecutions.get(taskId) === execution && taskProvider === 'openai' && activeProfile.apiMode === 'responses' && !activeProfile.codexCli) {
       if (promptWasRevised) {
         showCodexCliPrompt()
       } else if (!hasRevisedPromptValue) {
@@ -1562,8 +1902,8 @@ async function executeTask(taskId: string) {
 
     // 更新任务
     const latestBeforeUpdate = useStore.getState().tasks.find((t) => t.id === taskId)
-    if (!latestBeforeUpdate || latestBeforeUpdate.status !== 'running') {
-      useStore.getState().setTaskStreamPreview(taskId)
+    if (taskExecutions.get(taskId) !== execution || !latestBeforeUpdate || latestBeforeUpdate.status !== 'running') {
+      if (taskExecutions.get(taskId) === execution) useStore.getState().setTaskStreamPreview(taskId)
       await deleteUnreferencedImageIds([...outputIds, ...(transparentOriginalImageIds ?? [])])
       return
     }
@@ -1576,6 +1916,7 @@ async function executeTask(taskId: string) {
       outputErrors: result.failedRequests?.length ? result.failedRequests : undefined,
       streamPartialImageIds: undefined,
       rawImageUrls: result.rawImageUrls?.length ? result.rawImageUrls : undefined,
+      searchGrounding: result.searchGrounding,
       actualParams,
       actualParamsByImage,
       revisedPromptByImage,
@@ -1589,8 +1930,11 @@ async function executeTask(taskId: string) {
     const completionMessage = failedCount > 0
       ? `生成完成：成功 ${outputIds.length} 张，失败 ${failedCount} 张`
       : `生成完成，共 ${outputIds.length} 张图片`
-    useStore.getState().showToast(completionMessage, failedCount > 0 ? 'error' : 'success')
-    if (!isAgentTask(task)) showTaskCompletionNotification('图像生成完成', `${completionMessage}。`)
+    // 批量任务只在整批结束时统一提示
+    if (!batchTaskIds.has(taskId) && !isTaskHiddenByPrivacyMode(task)) {
+      useStore.getState().showToast(completionMessage, failedCount > 0 ? 'error' : 'success')
+      if (!isAgentTask(task)) showTaskCompletionNotification('图像生成完成', `${completionMessage}。`)
+    }
     const currentMask = useStore.getState().maskDraft
     if (
       maskDataUrl &&
@@ -1601,6 +1945,7 @@ async function executeTask(taskId: string) {
       useStore.getState().clearMaskDraft()
     }
   } catch (err) {
+    if (taskExecutions.get(taskId) !== execution) return
     clearOpenAIWatchdogTimer(taskId)
     const latestTask = useStore.getState().tasks.find((t) => t.id === taskId)
     if (!latestTask || latestTask.status !== 'running') return
@@ -1636,7 +1981,7 @@ async function executeTask(taskId: string) {
         streamImages: activeProfile.streamImages,
         streamPartialImages: activeProfile.streamPartialImages,
       }
-      const networkErrorHint = getApiRequestNetworkErrorHint(err, latestTask.createdAt, usesApiProxy, hintProfile)
+      const networkErrorHint = getApiRequestNetworkErrorHint(err, latestTask.startedAt ?? latestTask.createdAt, usesApiProxy, hintProfile)
       if (networkErrorHint && !errorMessage.includes(IMAGE_FETCH_CORS_HINT)) {
         errorMessage += `\n${networkErrorHint}`
       }
@@ -1646,12 +1991,15 @@ async function executeTask(taskId: string) {
         falRecoverable: false,
         customRecoverable: false,
       })
-      useStore.getState().setDetailTaskId(taskId)
+      // 批量任务不自动打开失败详情，避免连续弹窗打断
+      if (!batchTaskIds.has(taskId) && !isTaskHiddenByPrivacyMode(task)) useStore.getState().setDetailTaskId(taskId)
+      showTaskFailureNotification(task)
     }
   } finally {
+    if (taskExecutions.get(taskId) === execution) taskExecutions.delete(taskId)
     // 释放输入图片的内存缓存（已持久化到 IndexedDB，后续按需从 DB 加载）
-    for (const imgId of task.inputImageIds) {
-      deleteCachedImage(imgId)
+    if (!taskExecutions.has(taskId)) {
+      for (const imgId of task.inputImageIds) deleteCachedImage(imgId)
     }
   }
 }
@@ -1756,44 +2104,91 @@ export async function deleteFavoriteCollection(collectionId: string, deleteTasks
   useStore.getState().showToast(`已删除收藏夹「${collection.name}」`, 'success')
 }
 
-/** 重试失败的任务：创建新任务并执行 */
+/** 按重试方式新建任务或覆盖原任务；Agent 对话中的任务始终新建 */
 export async function retryTask(task: TaskRecord) {
-  const { settings } = useStore.getState()
+  const state = useStore.getState()
+  const { settings, tasks } = state
+  const source = tasks.find((item) => item.id === task.id)
+  if (!source || source.status === 'running' || source.falRecoverable || source.customRecoverable) return
   const activeProfile = getActiveApiProfile(settings)
-  const normalizedParams = normalizeParamsForSettings(task.params, settings, { hasInputImages: task.inputImageIds.length > 0 })
-  const shouldUseTransparentOutput = (normalizedParams.output_format === 'png' || normalizedParams.output_format === 'webp') && normalizedParams.transparent_output
+  const normalizedParams = normalizeParamsForSettings(source.params, settings, { hasInputImages: source.inputImageIds.length > 0 })
+  const shouldUseTransparentOutput = normalizedParams.transparent_output && supportsTransparentOutput(settings, activeProfile, normalizedParams.output_format)
   const taskParams = shouldUseTransparentOutput
     ? getTransparentRequestParams(normalizedParams)
     : { ...normalizedParams, transparent_output: false }
-  const transparentMeta = taskParams.transparent_output && activeProfile.transparentBackgroundMethod === 'local'
-    ? createTransparentOutputMeta(task.prompt.trim())
+  const transparentMeta = taskParams.transparent_output && activeProfile.transparentBackgroundMethod === 'local' && !isVectorOrAnimatedFormat(taskParams.output_format)
+    ? createTransparentOutputMeta(source.prompt.trim())
     : null
-  const taskId = genId()
+  const overwrite = !isAgentTask(source) && (
+    settings.retryMode === 'overwriteAll' || (settings.retryMode === 'overwriteFailed' && source.status === 'error')
+  )
+  const taskId = overwrite ? source.id : genId()
+  const startedAt = Date.now()
+  const favoritePatch = !overwrite && settings.saveTasksToActiveFavoriteCollection && state.appMode === 'gallery'
+    ? getNewTaskFavoritePatch(state, getTaskFavoriteCollectionIds(source, state.defaultFavoriteCollectionId))
+    : null
   const newTask: TaskRecord = {
+    ...(overwrite ? source : {}),
+    ...favoritePatch,
     id: taskId,
-    prompt: task.prompt,
+    prompt: source.prompt,
     params: taskParams,
+    paramSupport: getTaskParamSupport(settings, activeProfile),
     apiProvider: activeProfile.provider,
     apiProfileId: activeProfile.id,
     apiProfileName: activeProfile.name,
     apiMode: activeProfile.apiMode,
     apiModel: activeProfile.model,
-    inputImageIds: [...task.inputImageIds],
-    maskTargetImageId: task.maskTargetImageId ?? null,
-    maskImageId: task.maskImageId ?? null,
+    inputImageIds: [...source.inputImageIds],
+    maskTargetImageId: source.maskTargetImageId ?? null,
+    maskImageId: source.maskImageId ?? null,
+    markupImageId: source.markupImageId ?? null,
     transparentOutput: transparentMeta?.transparentOutput,
     transparentPrompt: transparentMeta?.effectivePrompt,
     outputImages: [],
+    outputErrors: undefined,
+    transparentOriginalImages: undefined,
+    actualParams: undefined,
+    actualParamsByImage: undefined,
+    revisedPromptByImage: undefined,
+    rawImageUrls: undefined,
+    searchGrounding: undefined,
+    promptHints: undefined,
+    rawResponsePayload: undefined,
+    streamPartialImageIds: undefined,
+    falRequestId: undefined,
+    falEndpoint: undefined,
+    falRecoverable: false,
+    customTaskId: undefined,
+    customRecoverable: false,
     status: 'running',
     error: null,
-    createdAt: Date.now(),
+    createdAt: overwrite ? source.createdAt : startedAt,
+    startedAt,
     finishedAt: null,
     elapsed: null,
   }
 
-  const latestTasks = useStore.getState().tasks
-  useStore.getState().setTasks([newTask, ...latestTasks])
+  if (overwrite) {
+    taskExecutions.delete(taskId)
+    // 覆盖后不再属于原批量，完成时应正常提示
+    batchTaskIds.delete(taskId)
+    clearOpenAIWatchdogTimer(taskId)
+    clearFalRecoveryTimer(taskId)
+    clearCustomRecoveryTimer(taskId)
+    useStore.getState().setTaskStreamPreview(taskId)
+  }
+  useStore.getState().setTasks(overwrite
+    ? tasks.map((item) => item.id === taskId ? newTask : item)
+    : [newTask, ...tasks])
   await putTask(newTask)
+  if (overwrite) {
+    void deleteUnreferencedImageIds([
+      ...source.outputImages,
+      ...(source.transparentOriginalImages ?? []),
+      ...(source.streamPartialImageIds ?? []),
+    ])
+  }
 
   executeTask(taskId)
 }
@@ -1808,26 +2203,37 @@ export async function reuseConfig(task: TaskRecord) {
   const shouldTemporarilyReuseProfile = Boolean(matchedProfile && matchedProfile.id !== currentProfile.id)
   const missingReusedProfile = normalizedSettings.reuseTaskApiProfileTemporarily && !matchedProfile
   const taskProfileName = matchedProfile?.name ?? getTaskApiProfileName(task)
-  const paramsSettings = shouldTemporarilyReuseProfile && matchedProfile ? createSettingsForApiProfile(normalizedSettings, matchedProfile) : normalizedSettings
+  // 复用当前配置时，任务所用模型仍在模型列表中则同步切换首页选中的模型；临时复用其他配置时模型只随复用状态生效
+  const currentProfileRecord = normalizedSettings.profiles.find((item) => item.id === currentProfile.id)
+  if (!shouldTemporarilyReuseProfile && task.apiModel && currentProfileRecord && currentProfileRecord.selectedModel !== task.apiModel && splitModelList(currentProfileRecord.model).includes(task.apiModel)) {
+    useStore.getState().setSettings({
+      profiles: normalizedSettings.profiles.map((item) => item.id === currentProfile.id ? { ...item, selectedModel: task.apiModel } : item),
+    })
+  }
+  const reuseSettings = normalizeSettings(useStore.getState().settings)
+  const paramsSettings = shouldTemporarilyReuseProfile && matchedProfile ? createSettingsForApiProfile(reuseSettings, matchedProfile) : reuseSettings
 
   setParams(normalizeParamsForSettings(task.params, paramsSettings, { hasInputImages: task.inputImageIds.length > 0 }))
   setReusedTaskApiProfile(
     shouldTemporarilyReuseProfile && matchedProfile ? matchedProfile.id : null,
     missingReusedProfile,
     taskProfileName,
+    shouldTemporarilyReuseProfile && matchedProfile ? matchedProfile.model : null,
   )
   clearMaskDraft()
 
   // 恢复输入图片
   const imgs: InputImage[] = []
-  for (const imgId of task.inputImageIds) {
+  for (const [idx, imgId] of task.inputImageIds.entries()) {
     const dataUrl = await ensureImageCached(imgId)
-    if (dataUrl) {
-      imgs.push({ id: imgId, dataUrl })
-    }
+    if (!dataUrl) continue
+    // 标注层始终属于第一张参考图
+    const markupImageId = idx === 0 && task.markupImageId && await ensureImageCached(task.markupImageId) ? task.markupImageId : undefined
+    imgs.push(markupImageId ? { id: imgId, dataUrl, markupImageId } : { id: imgId, dataUrl })
   }
   setInputImages(imgs)
-  setPrompt(task.prompt)
+  // 部分参考图可能已被删除，按图片 id 重新对齐提示词中的图片序号，避免评论和提及错位到其他图片
+  setPrompt(remapImageMentionsForOrder(task.prompt, task.inputImageIds.map((id) => ({ id, dataUrl: '' })), useStore.getState().inputImages))
   const maskTargetImageId = task.maskTargetImageId ?? (task.maskImageId ? task.inputImageIds[0] : null)
   if (maskTargetImageId && task.maskImageId && imgs.some((img) => img.id === maskTargetImageId)) {
     const maskDataUrl = await ensureImageCached(task.maskImageId)
@@ -1871,12 +2277,12 @@ export async function editOutputs(task: TaskRecord) {
 
   let added = 0
   for (const imgId of task.outputImages) {
-    if (inputImages.find((i) => i.id === imgId)) continue
     const dataUrl = await ensureImageCached(imgId)
-    if (dataUrl) {
-      addInputImage({ id: imgId, dataUrl })
-      added++
-    }
+    if (!dataUrl) continue
+    const image = await toReferenceImage(imgId, dataUrl)
+    if (inputImages.some((i) => i.id === image.id)) continue
+    addInputImage(image)
+    added++
   }
   showToast(`已添加 ${added} 张输出图到输入`, 'success')
 }
@@ -1884,7 +2290,7 @@ export async function editOutputs(task: TaskRecord) {
 async function removeTasks(taskIds: string[]) {
   const toDelete = new Set(taskIds)
   const deletedTasks = useStore.getState().tasks.filter((task) => toDelete.has(task.id))
-  await commitTaskDeletion(deletedTasks.map((task) => task.id), [])
+  await commitTaskDeletion(deletedTasks.map((task) => task.id), [], [])
   useStore.setState((state) => ({
     tasks: state.tasks.filter((task) => !toDelete.has(task.id)),
     selectedTaskIds: state.selectedTaskIds.filter((id) => !toDelete.has(id)),
@@ -1897,6 +2303,7 @@ async function removeTasks(taskIds: string[]) {
     clearFalRecoveryTimer(task.id)
     clearCustomRecoveryTimer(task.id)
     clearOpenAIWatchdogTimer(task.id)
+    taskExecutions.delete(task.id)
   }
   await deleteUnreferencedImageIds(deletedImageIds)
   return deletedTasks.length
@@ -1953,6 +2360,8 @@ export interface ClearOptions {
 /** 清空数据 */
 export async function clearData(options: ClearOptions = { clearConfig: true, clearTasks: true }) {
   const { setTasks, clearInputImages, clearMaskDraft, setSettings, setParams, showToast } = useStore.getState()
+  // 清空后剩余的批量提示词已没有对应的任务、配置或图片，直接结束批量
+  if (useStore.getState().batchProgress) endBatch(activeBatchId)
 
   if (options.clearTasks) {
     await dbClearTasks()
@@ -1964,6 +2373,7 @@ export async function clearData(options: ClearOptions = { clearConfig: true, cle
     useStore.setState({
       supportPromptOpen: false,
       supportPromptSkippedForImportedData: false,
+      imageSourceUrls: {},
     })
     clearInputImages()
     clearMaskDraft()
@@ -2011,8 +2421,10 @@ async function completeRecoveredCustomTask(task: TaskRecord, result: Awaited<Ret
     ...createTaskDonePatch(task, Date.now()),
     customRecoverable: false,
   })
-  useStore.getState().showToast(`自定义异步任务已恢复，共 ${outputIds.length} 张图片`, 'success')
-  if (!isAgentTask(task)) showTaskCompletionNotification('图像生成完成', `自定义异步任务已恢复，共 ${outputIds.length} 张图片。`)
+  if (!isTaskHiddenByPrivacyMode(task)) {
+    useStore.getState().showToast(`自定义异步任务已恢复，共 ${outputIds.length} 张图片`, 'success')
+    if (!isAgentTask(task)) showTaskCompletionNotification('图像生成完成', `自定义异步任务已恢复，共 ${outputIds.length} 张图片。`)
+  }
 }
 
 async function recoverCustomTask(taskId: string) {
@@ -2021,7 +2433,8 @@ async function recoverCustomTask(taskId: string) {
   if (!task || !task.customTaskId || task.status === 'done') return
 
   const profile = getCustomRecoveryProfile(settings, task)
-  const customProvider = profile ? getCustomProviderDefinition(settings, profile.provider) : null
+  const definition = profile ? getCustomProviderDefinition(settings, profile.provider) ?? (profile.provider === 'openai' || profile.provider === 'xai' ? OPENAI_IMAGE_TASK_PROVIDER : null) : null
+  const customProvider = profile && definition ? resolveCustomProviderModel(definition, profile.model) : null
   if (!profile || !customProvider?.poll) {
     scheduleCustomRecovery(taskId)
     return
@@ -2034,11 +2447,13 @@ async function recoverCustomTask(taskId: string) {
   } catch (err) {
     clearCustomRecoveryTimer(taskId)
     if (!useStore.getState().tasks.some((item) => item.id === taskId)) return
+    const error = err instanceof Error ? err.message : String(err)
     updateTaskInStore(taskId, {
-      ...createTaskErrorPatch(task, err instanceof Error ? err.message : String(err), Date.now()),
+      ...createTaskErrorPatch(task, error, Date.now()),
       ...getRawErrorPayload(err),
       customRecoverable: false,
     })
+    showTaskFailureNotification(task)
   }
 }
 
@@ -2050,6 +2465,9 @@ export interface ExportOptions {
 
 /** 导出数据为 ZIP */
 export async function exportData(options: ExportOptions = { exportConfig: true, exportTasks: true }) {
+  // 导出全程可取消：网页版放弃后续下载，客户端丢弃正在写入的临时文件
+  const signal = startDataProgress('export', true)
+  let savedParts = 0
   try {
     const state = useStore.getState()
     if (options.exportTasks && hasActiveDataOperations(state.tasks)) throw new Error('当前有任务正在进行，请完成或停止后再导出。')
@@ -2063,38 +2481,38 @@ export async function exportData(options: ExportOptions = { exportConfig: true, 
       settings,
       tasks,
       imageTasks: tasks,
+      imageSourceUrls: state.imageSourceUrls,
       favoriteCollections,
       defaultFavoriteCollectionId,
     }
-    const imageSizes = []
-    for (const id of imageIds) {
-      const image = await getImage(id)
-      if (!image) continue
-      const thumbnail = await getImageThumbnail(id)
-      imageSizes.push({ id, bytes: getExportImageEstimatedBytes(image, thumbnail) })
-    }
+    // 进度回调中检查取消，逐张读取时也能及时中断
+    const imageSizes = await getExportImageSizes(imageIds, (done) => {
+      throwIfAborted(signal)
+      updateDataProgress('统计图片', done, imageIds.length, 'image')
+    })
+    throwIfAborted(signal)
     const plan = getExportZipPlan(params, imageSizes)
     const backupId = `${exportedAt}`
+    // 客户端分卷备份时先选择目录，一次写入全部分卷，替代浏览器的多文件下载
+    if (isTauri && plan.length > 1) updateDataProgress('选择保存位置')
+    const dir = isTauri && plan.length > 1 ? await pickSaveDir() : null
+    if (isTauri && plan.length > 1 && !dir) return
+    let savedPath = ''
+    const imageTotal = plan.reduce((sum, part) => sum + part.imageIds.length, 0)
+    let imagesRead = 0
 
     for (let index = 0; index < plan.length; index++) {
-      const images: StoredImage[] = []
-      const thumbnailsByImageId = new Map<string, StoredImageThumbnail>()
-      for (const id of plan[index].imageIds) {
-        const image = await getImage(id)
-        if (!image) continue
-        images.push(image)
-        const thumbnail = await getImageThumbnail(id)
-        if (!thumbnail?.thumbnailDataUrl) continue
-        thumbnailsByImageId.set(id, thumbnail)
-        cacheThumbnail(id, {
-          dataUrl: thumbnail.thumbnailDataUrl,
-          width: thumbnail.width,
-          height: thumbnail.height,
-          thumbnailVersion: thumbnail.thumbnailVersion,
-        })
-      }
-
       const partNumber = index + 1
+      const partLabel = plan.length > 1 ? `（第 ${partNumber} / ${plan.length} 卷）` : ''
+      throwIfAborted(signal)
+      const { images, thumbnailsByImageId } = await readExportImages(plan[index].imageIds, (done) => {
+        throwIfAborted(signal)
+        updateDataProgress(`读取图片${partLabel}`, imagesRead + done, imageTotal, 'image')
+      })
+      imagesRead += plan[index].imageIds.length
+      throwIfAborted(signal)
+      updateDataProgress(`打包${partLabel}`)
+
       const result = await buildExportZip({
         ...params,
         tasks: plan[index].tasks,
@@ -2103,23 +2521,37 @@ export async function exportData(options: ExportOptions = { exportConfig: true, 
         includeManifestData: plan[index].includeBaseData,
         backupPart: plan.length > 1 ? { id: backupId, index: partNumber, total: plan.length } : undefined,
       })
-      const blob = createExportBlob(result.bytes)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
       const suffix = plan.length > 1 ? `_${String(plan.length).padStart(2, '0')}parts_part${String(partNumber).padStart(2, '0')}` : ''
-      a.href = url
-      a.download = `gpt-image-playground-backup_${formatExportFileTime(new Date(exportedAt))}${suffix}.zip`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      const fileName = `gpt-image-playground-backup_${formatExportFileTime(new Date(exportedAt))}${suffix}.zip`
+      throwIfAborted(signal)
+      updateDataProgress(`保存文件${partLabel}`)
+      const saveOpts: SaveOptions = { signal, onProgress: (written, total) => updateDataProgress(`保存文件${partLabel}`, written, total, 'byte') }
+      if (dir) {
+        await saveFileToDir(dir, result.bytes, fileName, saveOpts)
+        savedParts++
+        continue
+      }
+      // 客户端直接传字节给 Rust 写入，不再复制一份 Blob
+      const saved = await saveFile(isTauri ? result.bytes : createExportBlob(result.bytes), fileName, saveOpts)
+      if (!saved) return
+      savedParts++
+      savedPath = saved
       if (partNumber < plan.length) await new Promise((resolve) => setTimeout(resolve, 150))
     }
-    useStore.getState().showToast(plan.length > 1 ? `已请求下载 ${plan.length} 个 ZIP，请确认浏览器已允许多文件下载` : '数据已导出', 'success')
+    const msg = dir
+      ? `已导出 ${plan.length} 个 ZIP 到 ${dir.path}`
+      : plan.length > 1 ? `正在下载 ${plan.length} 个 ZIP，如被浏览器拦截，请允许多文件下载` : isTauri ? `已导出到 ${savedPath}` : '数据已导出'
+    useStore.getState().showToast(msg, 'success')
   } catch (e) {
+    if (signal.aborted) {
+      useStore.getState().showToast(savedParts ? `已取消导出，已${isTauri ? '保存' : '下载'}的 ${savedParts} 个分卷不完整，可以删除` : '已取消导出', 'info')
+      return
+    }
     console.error('exportData failed', e)
     const detail = e instanceof Error ? e.message.trim() : String(e).trim()
-    useStore.getState().showToast(detail ? `导出失败，${detail}` : '导出失败，未知错误', 'error')
+    useStore.getState().showToast(detail ? `导出失败，${detail}` : '导出失败', 'error')
+  } finally {
+    endDataProgress()
   }
 }
 
@@ -2146,46 +2578,60 @@ export async function restoreExplicitPresetConfig(ids: { providerIds: string[], 
 
 /** 导入 ZIP 数据 */
 export async function importData(input: File | File[], options: ImportOptions = { importConfig: true, importTasks: true }): Promise<boolean> {
+  // 只允许在解析备份阶段取消；开始写入后取消会留下半份数据
+  const signal = startDataProgress('import', true)
   try {
     const state = useStore.getState()
     if (options.importTasks && hasActiveDataOperations(state.tasks)) throw new Error('当前有任务正在进行，请完成或停止后再导入。')
     const files = Array.isArray(input) ? input : [input]
     if (!files.length) throw new Error('没有选择备份文件。')
     if (files.some((file) => file.size >= MAX_EXPORT_ZIP_BYTES)) {
-      throw new Error('单个 ZIP 不能达到或超过 2 GB，请选择分片备份。')
+      throw new Error('单个 ZIP 不能超过 2 GB，请使用分卷备份。')
     }
 
     const selected = [] as Array<{ file: File; manifest: Awaited<ReturnType<typeof readExportZipManifest>> }>
-    for (const file of files) {
+    for (const [idx, file] of files.entries()) {
+      updateDataProgress('解析备份', idx, files.length > 1 ? files.length : 0, files.length > 1 ? 'file' : undefined)
       const manifest = await readExportZipManifest(new Uint8Array(await file.arrayBuffer()), options.importTasks)
       selected.push({ file, manifest })
+      throwIfAborted(signal)
     }
     const multipart = selected.some((part) => part.manifest.backupPart != null)
     if (multipart) {
-      if (selected.some((part) => !part.manifest.backupPart)) throw new Error('不能混合选择分片备份和普通备份。')
+      if (selected.some((part) => !part.manifest.backupPart)) throw new Error('不能同时选择分卷备份和普通备份。')
       const first = selected[0].manifest.backupPart!
       const indexes = new Set(selected.map((part) => part.manifest.backupPart!.index))
       const validSet = selected.every((part) => {
         const backupPart = part.manifest.backupPart!
         return backupPart.id === first.id && backupPart.total === first.total && backupPart.index >= 1 && backupPart.index <= first.total
       })
-      if (!validSet || indexes.size !== selected.length) throw new Error('所选分片不属于同一批备份或包含重复分片。')
+      if (!validSet || indexes.size !== selected.length) throw new Error('所选分卷不属于同一份备份，或有重复。')
       if (options.importTasks && (selected.length !== first.total || indexes.size !== first.total)) {
-        throw new Error(`分片备份不完整，请一次选择同一备份的全部 ${first.total} 个 ZIP。`)
+        throw new Error(`分卷不全，请一次选择全部 ${first.total} 个 ZIP。`)
       }
       selected.sort((a, b) => a.manifest.backupPart!.index - b.manifest.backupPart!.index)
     }
 
     const settingsManifests = selected.filter((part) => part.manifest.settings)
-    if (options.importConfig && !options.importTasks && !settingsManifests.length) throw new Error('所选备份不包含配置数据。')
+    if (options.importConfig && !options.importTasks && !settingsManifests.length) throw new Error('这份备份里没有配置。')
     const importedTasks = selected.flatMap((part) => part.manifest.tasks ?? [])
     const hasTaskData = selected.some((part) => part.manifest.tasks != null || part.manifest.imageFiles != null)
 
+    // 先关闭取消再检查，确保点了取消就不会进入写入阶段
+    setDataProgressCancelable(false)
+    throwIfAborted(signal)
+
     const importedImageIds: string[] = []
     if (options.importTasks && hasTaskData) {
-      for (const part of selected) {
+      // 原图和缩略图合并计数，分片交替写入时进度条也只增不减
+      const fileTotal = selected.reduce((sum, part) => sum + Object.keys(part.manifest.imageFiles ?? {}).length + Object.keys(part.manifest.thumbnailFiles ?? {}).length, 0)
+      let filesDone = 0
+      for (const [idx, part] of selected.entries()) {
+        updateDataProgress(selected.length > 1 ? `读取备份（第 ${idx + 1} / ${selected.length} 个）` : '读取备份', filesDone, fileTotal, 'file')
         const { manifest, files: zipFiles } = await readExportZip(new Uint8Array(await part.file.arrayBuffer()))
         for (const [id, info] of Object.entries(manifest.imageFiles ?? {})) {
+          // 先计入当前文件，写到最后一个时进度到 100%
+          updateDataProgress('写入图片和缩略图', ++filesDone, fileTotal, 'file')
           const dataUrl = readExportZipFileAsDataUrl(zipFiles, info.path)
           if (!dataUrl) continue
           await putImage({
@@ -2197,10 +2643,16 @@ export async function importData(input: File | File[], options: ImportOptions = 
             height: info.height,
           })
           cacheImage(id, dataUrl)
+          // 备份文件来自外部，只接受 http(s) 链接
+          if (isHttpUrl(info.sourceUrl)) {
+            const sourceUrl = info.sourceUrl
+            useStore.setState((s) => ({ imageSourceUrls: { ...s.imageSourceUrls, [id]: sourceUrl } }))
+          }
           importedImageIds.push(id)
         }
 
         for (const [id, info] of Object.entries(manifest.thumbnailFiles ?? {})) {
+          updateDataProgress('写入图片和缩略图', ++filesDone, fileTotal, 'file')
           const thumbnailDataUrl = readExportZipFileAsDataUrl(zipFiles, info.path)
           if (!thumbnailDataUrl) continue
           await putImageThumbnail({
@@ -2211,7 +2663,7 @@ export async function importData(input: File | File[], options: ImportOptions = 
             thumbnailVersion: info.thumbnailVersion,
           })
           cacheThumbnail(id, {
-            dataUrl: thumbnailDataUrl,
+            src: thumbnailDataUrl,
             width: info.width,
             height: info.height,
             thumbnailVersion: info.thumbnailVersion,
@@ -2219,8 +2671,10 @@ export async function importData(input: File | File[], options: ImportOptions = 
         }
       }
 
+      updateDataProgress('写入任务和会话')
       for (const task of importedTasks) {
-        await putTask(task)
+        // startedAt 来自导入文件，非法值会让计时和“重试于”显示异常
+        await putTask(Number.isFinite(task.startedAt) || task.startedAt === undefined ? task : { ...task, startedAt: undefined })
       }
 
       const tasks = await getAllTasks()
@@ -2242,13 +2696,13 @@ export async function importData(input: File | File[], options: ImportOptions = 
       })
       if (normalizedFavorites.changed) await Promise.all(normalizedFavorites.tasks.map((task) => putTask(task)))
       skipSupportPromptForImportedData(tasks)
-      scheduleThumbnailBackfill(importedImageIds)
+      void scheduleMissingThumbnailBackfill(importedImageIds)
     }
 
     if (options.importConfig && settingsManifests.length) {
       const state = useStore.getState()
       const providerIds = new Set(settingsManifests.flatMap((part) =>
-        part.manifest.settings?.customProviders.map((provider) => provider.id) ?? [],
+        part.manifest.settings?.customProviders?.map((provider) => provider.id) ?? [],
       ))
       const profileIds = new Set(settingsManifests.flatMap((part) =>
         part.manifest.settings?.profiles.map((profile) => profile.id) ?? [],
@@ -2269,20 +2723,26 @@ export async function importData(input: File | File[], options: ImportOptions = 
       current.setSettings(settings)
     }
 
-    let msg = '数据已成功导入'
+    let msg = '导入完成'
     if (options.importTasks && hasTaskData) {
       msg = `已导入 ${importedTasks.length} 个任务`
     } else if (options.importConfig && settingsManifests.length) {
-      msg = '配置已成功导入'
+      msg = '配置已导入'
     }
 
     useStore.getState().showToast(msg, 'success')
     return true
   } catch (e) {
+    if (signal.aborted) {
+      useStore.getState().showToast('已取消导入', 'info')
+      return false
+    }
     console.error('importData failed', e)
     const detail = e instanceof Error ? e.message.trim() : String(e).trim()
-    useStore.getState().showToast(detail ? `导入失败，${detail}` : '导入失败，未知错误', 'error')
+    useStore.getState().showToast(detail ? `导入失败，${detail}` : '导入失败', 'error')
     return false
+  } finally {
+    endDataProgress()
   }
 }
 
@@ -2295,21 +2755,27 @@ export async function addImageFromFile(file: File): Promise<void> {
 
 export async function createInputImageFromFile(file: File): Promise<InputImage | null> {
   if (!file.type.startsWith('image/')) return null
-  const dataUrl = await fileToDataUrl(file)
+  // 图像接口不接受 SVG 和 GIF，加入时就转成 PNG
+  const dataUrl = await toApiInputImageDataUrl(await fileToDataUrl(file))
   const id = await storeImage(dataUrl, 'upload')
   cacheImage(id, dataUrl)
+  // 本地添加的图片即使与链接添加的内容相同，也不再沿用当时的链接，以免提交已过期的链接
+  forgetImageSourceUrl(id)
   return { id, dataUrl }
 }
 
-/** 添加图片到输入（右键菜单）—— 支持 data/blob/http URL */
+/** 添加图片到输入（右键菜单、添加链接）—— 支持 data/blob/http URL */
 export async function createInputImageFromUrl(src: string): Promise<InputImage> {
-  const res = await fetch(src)
+  const res = await apiFetch(src)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const blob = await res.blob()
   if (!blob.type.startsWith('image/')) throw new Error('不是有效的图片')
-  const dataUrl = await blobToDataUrl(blob)
+  // 图像接口不接受 SVG 和 GIF，加入时就转成 PNG
+  const dataUrl = await toApiInputImageDataUrl(await blobToDataUrl(blob))
   const id = await storeImage(dataUrl, 'upload')
   cacheImage(id, dataUrl)
+  // 内容相同的图片共用一个 id，记录最近一次添加的链接
+  if (isHttpUrl(src)) useStore.setState((s) => ({ imageSourceUrls: { ...s.imageSourceUrls, [id]: src } }))
   return { id, dataUrl }
 }
 

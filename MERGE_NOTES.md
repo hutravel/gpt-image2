@@ -1,25 +1,36 @@
 # 上游合并记录
 
-本地分支：`merge/upstream-v0.7.12`。
-原 fork 基线：`main`（`ae44923`）。
-合入上游：`v0.7.12`（`da4fda85b59ecacc51d6a1e2ef680e3abb9e29b8`）。
+本次合并分支：`merge/upstream-v0.9.0`。
+合并基线：`main`（`2350464`，fork v0.7.15）。
+合入上游：`v0.9.0`（`5e1f5e7`，2026-11-07），共 152 个提交、308 个文件。
 
-原 fork 为独立导入，未与上游共享 Git 祖先。本分支以该上游版本为基础，迁回 fork 的功能与配置。
+## 本次合入的上游功能
 
-## 保留与调整
+- Google（Gemini / Nano Banana）与 xAI（Grok Imagine）原生图像接口；OpenAI 兼容 Images API 也可用这两类模型，参数随模型 ID 自动切换。
+- 参数栏按模型提供比例、分辨率、思考等级和质量选项，不支持的项置灰并说明原因。
+- Gemini 可开启 Google Search / Image Search，任务详情展示搜索来源。
+- 自定义服务商按模型配置接口（`modelOverrides`、`{model}` 占位符、`$inputImages.base64/urls`、JSON 字符串结果解析）。
+- GPT Image 2.6 适配：复杂度、GIF 帧参数、SVG 输出、markup 独立标注图层。
+- 画板（SketchBoard）与评论标注、遮罩编辑器统一风格。
+- 隐私模式（默认 Ctrl+Shift+H）、外观配置（浅色/深色/跟随系统）、界面与代码字体选择。
+- 多提示词批量提交、多模型切换（逗号分隔 + selectedModel）、失败任务原位重试（覆盖式/新建）。
+- 数据导出导入进度与取消、导入配置链接逐项 diff 确认、画廊虚拟列表、图片二进制存储与旧数据后台迁移。
+- Windows 桌面客户端（Tauri）：SQLite 存储、自绘标题栏、应用内更新、网络代理、数据目录迁移、CLI `gpt-image-playground` 与随附 Skill；部署工作流（deploy.yml）保留 fork 的跳过上游 release 校验逻辑，并合入桌面端 `workflow_run` 触发与签名密钥。
 
-- 保留 Image Paint 品牌、提示词广场及本地数据源、同步脚本。
-- 保留输入框 `@图N` 缩略图、预览、替换和引用顺序映射，并保留上游 IME/光标修复。
-- 保留 Base64 配置导入、请求与响应选项、自定义异步端点、模型 ID 设置。
-- 新配置默认模型为 `gpt-image-2`，Base64 开启、URL 返回关闭，超时为 600 秒；已有配置的显式值继续保留。
-- `gpt-image-2.5-sunburst`、`gpt-image-2.5-flare` 的质量为 `auto/low/medium/high/xhigh/max`，不提供 `ultra`。底层计时 API 按需将秒转换成毫秒。
-- 移除 Agent 对话界面、设置、动作、专用 API 及测试；模式为 `gallery | square`。普通图库的 Responses/Codex CLI 兼容功能保留。
-- 历史任务、图片及收藏继续兼容。旧会话数据库不删除，旧 localStorage 数据隔离保留，图片清理保护其引用。
+## 保留的 fork 决策
+
+- Image Paint 品牌、提示词广场及全部本地数据源、同步脚本；Header/App 的广场入口。
+- 输入框 `@图N` 缩略图提及（getImageMentionTagHtml），采纳上游基于记录选区的插入方式（IME 修复）。
+- `model` 是唯一模型来源（含 Responses 图像工具），`imageGenerationModel` 仅作旧数据兜底；相关上游测试已按此语义调整。
+- 新配置默认模型 `gpt-image-2`、Base64 开启（tri-state 保留，record 未设置时回落到 createDefault 的 true）、超时 600 秒；skill 文档与 LLM 提示词同步改为 `gpt-image-2`。
+- Worker 图片代理路由保留，与上游 `apiFetch`（Tauri 感知）合并。
+- 移除 Agent 对话界面、设置、动作、专用 API 及测试；`SettingsTab` 无 `agent` 页；`db.ts` 保留旧 `agentConversations` store 的原样存取以保护历史图片引用（`LegacyConversationRecord`）。
+- 隐私模式快照无 agent 字段；`hasInterruptibleOperations(tasks, batchProgress)` 无对话参数。
+- CLI 设置键列表去掉 agent 相关键。
 
 ## 验证
 
-- 生产构建通过；Vite 仍有大体积 chunk 提示。
-- 全量测试通过：27 个文件、405 项。
-- 浏览器自动化受本机沙箱 ACL 故障影响，未完成交互验收；未调用真实付费出图 API。
-
-改动仅位于本地合并分支，尚未提交或推送。
+- `tsc --noEmit` 0 错误（源码 + 测试）。
+- `vitest run`：63 个文件、869 项通过（1 项跳过）。
+- `npm run build` 生产构建通过（大 chunk 提示与上游一致）。
+- 浏览器交互验收与真实出图 API 未执行。

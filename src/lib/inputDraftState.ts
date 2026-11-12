@@ -17,7 +17,11 @@ function normalizeInputImages(value: unknown): InputImage[] {
   return value
     .map((img): InputImage | null => {
       if (!isRecord(img) || typeof img.id !== 'string') return null
-      return { id: img.id, dataUrl: typeof img.dataUrl === 'string' ? img.dataUrl : '' }
+      return {
+        id: img.id,
+        dataUrl: typeof img.dataUrl === 'string' ? img.dataUrl : '',
+        ...(typeof img.markupImageId === 'string' && img.markupImageId ? { markupImageId: img.markupImageId } : {}),
+      }
     })
     .filter((img): img is InputImage => img != null)
 }

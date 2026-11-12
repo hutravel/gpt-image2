@@ -3,6 +3,7 @@ import type {
   ApiProfile,
   ApiProvider,
   AppSettings,
+  PresetConfig,
   CustomProviderContentType,
   CustomProviderDefinition,
   CustomProviderFileMapping,
@@ -11,6 +12,8 @@ import type {
   CustomProviderResultMapping,
   CustomProviderSubmitMapping,
   CustomProviderTemplate,
+  ReferenceImageEditAction,
+  RetryMode,
 } from '../types'
 import { DEFAULT_STREAM_PARTIAL_IMAGES, DEFAULT_ZIP_DOWNLOAD_ROUTES, ZIP_DOWNLOAD_ROUTE_VALUES } from '../types'
 import { customProviderSupportsNativeTransparentBackground } from './customProviderCapabilities'
@@ -18,7 +21,10 @@ import { shouldUseApiProxy } from './devProxy'
 import { normalizeReasoningEffort, normalizeStreamPartialImages, parseDefaultApiUrl } from './defaultApiUrl'
 import { readRuntimeEnv } from './runtimeEnv'
 import { isImportableConfigUrl } from './importableConfigUrl'
-import { DEFAULT_IMAGES_MODEL } from './imageModels'
+import { DEFAULT_IMAGES_MODEL, getImageModelFamily } from './imageModels'
+import { DEFAULT_BATCH_PROMPT_CONCURRENCY, normalizeBatchPromptConcurrency } from './batchPrompts'
+import { normalizeFontMode } from './fonts'
+import { DEFAULT_PRIVACY_MODE_SHORTCUT, normalizeShortcutSetting } from './keyboardShortcut'
 
 const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1'
 const RAW_DEFAULT_API_URL = readRuntimeEnv(import.meta.env.VITE_DEFAULT_API_URL)
@@ -29,13 +35,17 @@ const DEFAULT_API_URL_PATCH = isImportableConfigUrl(RAW_DEFAULT_API_URL)
   : parseDefaultApiUrl(RAW_DEFAULT_API_URL || (DOCKER_DEPLOYMENT && DEFAULT_OPENAI_API_PROXY ? '' : OPENAI_DEFAULT_BASE_URL))
 const DEFAULT_BASE_URL = DEFAULT_API_URL_PATCH?.baseUrl ?? ''
 export { DEFAULT_IMAGES_MODEL } from './imageModels'
-export const DEFAULT_RESPONSES_MODEL = 'gpt-5.6-sol'
+export const DEFAULT_RESPONSES_MODEL = 'gpt-6.1-sol'
 export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
 export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'
+export const NATIVE_IMAGE_PROVIDERS = {
+  google: { name: 'Google', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-nano-banana-2.1' },
+  xai: { name: 'xAI', baseUrl: 'https://api.x.ai/v1', model: 'grok-imagine-image-2.0' },
+}
 export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
 export const DEFAULT_API_TIMEOUT = 600
 
-const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai', 'sb2api-async', 'fal'])
+const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai', 'google', 'xai', 'sb2api-async', 'fal'])
 const DEFAULT_CUSTOM_PROVIDER_PATHS = {
   generationPath: 'images/generations',
   editPath: 'images/edits',
@@ -116,6 +126,15 @@ export function getDefaultApiProfileId(settings: Partial<AppSettings> | unknown)
   return null
 }
 
+function normalizeReferenceImageEditAction(value: unknown): ReferenceImageEditAction {
+  return value === 'sketch' || value === 'mask' ? value : 'ask'
+}
+
+function normalizeRetryMode(value: unknown, alwaysShowRetryButton: boolean): RetryMode {
+  if (value === 'overwriteAll') return alwaysShowRetryButton ? value : 'overwriteFailed'
+  return value === 'overwriteFailed' ? value : 'new'
+}
+
 function normalizeZipDownloadRoutes(value: unknown) {
   if (!Array.isArray(value)) return [...DEFAULT_ZIP_DOWNLOAD_ROUTES]
   const allowed = new Set<string>(ZIP_DOWNLOAD_ROUTE_VALUES)
@@ -125,7 +144,7 @@ function normalizeZipDownloadRoutes(value: unknown) {
 function normalizeProviderOrder(value: unknown, customProviders: CustomProviderDefinition[]): string[] | undefined {
   if (!Array.isArray(value)) return undefined
 
-  const providerIds = ['openai', 'sb2api-async', 'fal', ...customProviders.map((provider) => provider.id)]
+  const providerIds = ['openai', 'google', 'xai', 'sb2api-async', 'fal', ...customProviders.map((provider) => provider.id)]
   const knownIds = new Set(providerIds)
   const ordered = value
     .map(String)
@@ -327,6 +346,13 @@ export function normalizeCustomProviderDefinition(input: unknown, usedIds = new 
       result: DEFAULT_OPENAI_RESULT,
     }) : undefined,
     poll: normalizePollMapping(record.poll),
+    modelOverrides: Array.isArray(record.modelOverrides) ? record.modelOverrides.flatMap((item) => {
+      if (!isRecord(item) || !Array.isArray(item.models) || !isRecord(item.submit)) return []
+      const models = normalizeStringArray(item.models, [])
+      if (!models.length) return []
+      const mapping = normalizeCustomProviderDefinition({ name: rawName, submit: item.submit, editSubmit: item.editSubmit, poll: item.poll })
+      return mapping ? [{ models, submit: mapping.submit, editSubmit: mapping.editSubmit, poll: mapping.poll }] : []
+    }) : undefined,
   }
 }
 
@@ -406,6 +432,23 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
   }
   const savedDraft = providerDrafts[provider]
 
+  if (provider === 'google' || provider === 'xai') {
+    const defaults = NATIVE_IMAGE_PROVIDERS[provider]
+    return {
+      ...profile,
+      provider,
+      baseUrl: savedDraft?.baseUrl ?? defaults.baseUrl,
+      model: savedDraft?.model ?? defaults.model,
+      apiMode: 'images',
+      codexCli: false,
+      apiProxy: false,
+      streamImages: false,
+      responseFormatB64Json: savedDraft?.responseFormatB64Json,
+      transparentBackgroundMethod: 'local',
+      providerDrafts,
+    }
+  }
+
   if (provider === 'fal') {
     return {
       ...profile,
@@ -417,7 +460,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
       reasoningEffort: savedDraft?.reasoningEffort,
       codexCli: false,
       apiProxy: false,
-      responseFormatB64Json: savedDraft?.responseFormatB64Json ?? !savedDraft?.responseFormatUrl,
+      responseFormatB64Json: savedDraft?.responseFormatB64Json,
       responseFormatUrl: savedDraft?.responseFormatUrl ?? false,
       streamImages: false,
       streamPartialImages: savedDraft?.streamPartialImages ?? DEFAULT_STREAM_PARTIAL_IMAGES,
@@ -439,7 +482,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
       reasoningEffort: savedDraft?.reasoningEffort,
       codexCli: savedDraft?.codexCli ?? false,
       apiProxy: false,
-      responseFormatB64Json: savedDraft?.responseFormatB64Json ?? !savedDraft?.responseFormatUrl,
+      responseFormatB64Json: savedDraft?.responseFormatB64Json,
       responseFormatUrl: savedDraft?.responseFormatUrl ?? false,
       streamImages: false,
       streamPartialImages: savedDraft?.streamPartialImages ?? DEFAULT_STREAM_PARTIAL_IMAGES,
@@ -466,7 +509,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
     reasoningEffort: savedDraft?.reasoningEffort ?? profile.reasoningEffort,
     codexCli: savedDraft?.codexCli ?? profile.codexCli,
     apiProxy: savedDraft?.apiProxy ?? DEFAULT_OPENAI_API_PROXY,
-    responseFormatB64Json: savedDraft?.responseFormatB64Json ?? !savedDraft?.responseFormatUrl,
+    responseFormatB64Json: savedDraft?.responseFormatB64Json,
     responseFormatUrl: savedDraft?.responseFormatUrl ?? false,
     streamImages: nextStreamImages,
     streamPartialImages: nextStreamPartialImages,
@@ -488,7 +531,7 @@ function normalizeProviderDraft(
     ? createDefaultFalProfile()
     : createDefaultOpenAIProfile({ transparentBackgroundMethod })
   const baseUrl = typeof input.baseUrl === 'string' ? input.baseUrl : undefined
-  const model = typeof input.model === 'string' && input.model.trim() ? input.model : undefined
+  const model = (typeof input.model === 'string' && normalizeModelList(input.model)) || undefined
   const imageGenerationModel = typeof input.imageGenerationModel === 'string' ? input.imageGenerationModel.trim() : ''
   const apiMode = input.apiMode === 'responses' ? 'responses' : input.apiMode === 'images' ? 'images' : undefined
   const knownProvider = BUILT_IN_PROVIDER_IDS.has(provider) || customProviderIds.has(provider)
@@ -504,7 +547,7 @@ function normalizeProviderDraft(
     reasoningEffort: normalizeReasoningEffort(input.reasoningEffort),
     codexCli: typeof input.codexCli === 'boolean' ? input.codexCli : fallback.codexCli,
     apiProxy: typeof input.apiProxy === 'boolean' ? input.apiProxy : fallback.apiProxy,
-    responseFormatB64Json: typeof input.responseFormatB64Json === 'boolean' ? input.responseFormatB64Json : input.responseFormatUrl !== true,
+    responseFormatB64Json: input.responseFormatB64Json === true ? true : undefined,
     responseFormatUrl: input.responseFormatUrl === true && input.responseFormatB64Json !== true,
     streamImages: typeof input.streamImages === 'boolean' ? input.streamImages : fallback.streamImages,
     streamPartialImages: normalizeStreamPartialImages(input.streamPartialImages, fallback.streamPartialImages),
@@ -537,7 +580,10 @@ export function normalizeApiProfile(
   const rawProvider = typeof record.provider === 'string' ? record.provider : ''
   const provider: ApiProvider = BUILT_IN_PROVIDER_IDS.has(rawProvider) || customProviderIds.has(rawProvider) ? rawProvider : 'openai'
   const apiMode: ApiMode = provider === 'openai' && record.apiMode === 'responses' ? 'responses' : 'images'
-  const providerFallback = customProviderIds.has(provider)
+  const nativeProvider = provider === 'google' || provider === 'xai' ? NATIVE_IMAGE_PROVIDERS[provider] : null
+  const providerFallback = nativeProvider
+    ? { baseUrl: nativeProvider.baseUrl, model: nativeProvider.model, transparentBackgroundMethod: 'local' as const, ...fallback }
+    : customProviderIds.has(provider)
     ? { transparentBackgroundMethod: 'local' as const, ...fallback }
     : fallback
   const defaults = provider === 'fal'
@@ -547,7 +593,7 @@ export function normalizeApiProfile(
   const streamImages = provider === 'openai'
     ? typeof record.streamImages === 'boolean' ? record.streamImages : defaults.streamImages
     : false
-  const nativeTransparentBackgroundUnavailable = customProviderIds.has(provider) && !nativeTransparentProviderIds.has(provider)
+  const nativeTransparentBackgroundUnavailable = Boolean(nativeProvider) || (customProviderIds.has(provider) && !nativeTransparentProviderIds.has(provider))
 
   return {
     ...defaults,
@@ -558,22 +604,24 @@ export function normalizeApiProfile(
     provider,
     baseUrl: provider === 'fal' ? rawBaseUrl.trim().replace(/\/+$/, '') : rawBaseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : defaults.apiKey,
-    model: typeof record.model === 'string' && record.model.trim() ? record.model : defaults.model,
+    model: (typeof record.model === 'string' && normalizeModelList(record.model)) || defaults.model,
+    selectedModel: typeof record.selectedModel === 'string' && record.selectedModel.trim() ? record.selectedModel.trim() : undefined,
     imageGenerationModel: typeof record.imageGenerationModel === 'string'
       ? record.imageGenerationModel.trim()
       : '',
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : defaults.timeout,
     apiMode,
     reasoningEffort: normalizeReasoningEffort(record.reasoningEffort, defaults.reasoningEffort),
-    codexCli: Boolean(record.codexCli),
+    codexCli: !nativeProvider && Boolean(record.codexCli),
     apiProxy: provider === 'sb2api-async' ? false : typeof record.apiProxy === 'boolean' ? record.apiProxy : defaults.apiProxy,
-    responseFormatB64Json: typeof record.responseFormatB64Json === 'boolean' ? record.responseFormatB64Json : record.responseFormatUrl !== true,
+    responseFormatB64Json: typeof record.responseFormatB64Json === 'boolean' ? record.responseFormatB64Json : defaults.responseFormatB64Json,
     responseFormatUrl: record.responseFormatUrl === true && record.responseFormatB64Json !== true,
     streamImages,
     streamPartialImages: normalizeStreamPartialImages(record.streamPartialImages, defaults.streamPartialImages),
     transparentBackgroundMethod: !nativeTransparentBackgroundUnavailable && (record.transparentBackgroundMethod === 'api' || record.transparentBackgroundMethod === 'local')
       ? record.transparentBackgroundMethod
       : defaults.transparentBackgroundMethod,
+    svgModel: typeof record.svgModel === 'string' && record.svgModel.trim() ? record.svgModel.trim() : undefined,
     providerDrafts: normalizeProviderDrafts(record.providerDrafts, customProviderIds, nativeTransparentProviderIds),
   }
 }
@@ -658,7 +706,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
   const record = input && typeof input === 'object' ? input as Record<string, unknown> : {}
   const customProviders = normalizeCustomProviderDefinitions(record.customProviders)
   const customProviderIds = new Set(customProviders.map((provider) => provider.id))
-  const nativeTransparentProviderIds = new Set(customProviders.filter(customProviderSupportsNativeTransparentBackground).map((provider) => provider.id))
+  const nativeTransparentProviderIds = new Set(customProviders.filter((provider) => customProviderSupportsNativeTransparentBackground(provider)).map((provider) => provider.id))
   const legacyApiMode: ApiMode = record.apiMode === 'responses' ? 'responses' : 'images'
   const legacyProfile = normalizeApiProfile({
     baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl : DEFAULT_BASE_URL,
@@ -669,7 +717,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     apiMode: legacyApiMode,
     codexCli: Boolean(record.codexCli),
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : DEFAULT_OPENAI_API_PROXY,
-    responseFormatB64Json: typeof record.responseFormatB64Json === 'boolean' ? record.responseFormatB64Json : record.responseFormatUrl !== true,
+    responseFormatB64Json: typeof record.responseFormatB64Json === 'boolean' ? record.responseFormatB64Json : undefined,
     responseFormatUrl: record.responseFormatUrl === true && record.responseFormatB64Json !== true,
     streamImages: typeof record.streamImages === 'boolean' ? record.streamImages : undefined,
     streamPartialImages: normalizeStreamPartialImages(record.streamPartialImages),
@@ -707,13 +755,28 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     persistInputOnRestart: typeof record.persistInputOnRestart === 'boolean' ? record.persistInputOnRestart : true,
     reuseTaskApiProfileTemporarily: typeof record.reuseTaskApiProfileTemporarily === 'boolean' ? record.reuseTaskApiProfileTemporarily : false,
     alwaysShowRetryButton: typeof record.alwaysShowRetryButton === 'boolean' ? record.alwaysShowRetryButton : false,
+    saveTasksToActiveFavoriteCollection: typeof record.saveTasksToActiveFavoriteCollection === 'boolean' ? record.saveTasksToActiveFavoriteCollection : true,
+    retryMode: normalizeRetryMode(record.retryMode, record.alwaysShowRetryButton === true),
     allowPromptRewrite: typeof record.allowPromptRewrite === 'boolean' ? record.allowPromptRewrite : false,
+    imagePromptHints: typeof record.imagePromptHints === 'boolean' ? record.imagePromptHints : true,
     taskCompletionNotification: typeof record.taskCompletionNotification === 'boolean' ? record.taskCompletionNotification : false,
+    autoCheckUpdate: typeof record.autoCheckUpdate === 'boolean' ? record.autoCheckUpdate : true,
+    writeLogFile: typeof record.writeLogFile === 'boolean' ? record.writeLogFile : true,
     enterSubmit: typeof record.enterSubmit === 'boolean' ? record.enterSubmit : false,
-    referenceImageEditAction: record.referenceImageEditAction === 'replace-reference' || record.referenceImageEditAction === 'add-mask'
-      ? record.referenceImageEditAction
-      : 'ask',
+    privacyModeShortcut: normalizeShortcutSetting(record.privacyModeShortcut, DEFAULT_PRIVACY_MODE_SHORTCUT),
+    colorMode: record.colorMode === 'light' || record.colorMode === 'dark' ? record.colorMode : 'system',
+    uiFont: normalizeFontMode(record.uiFont),
+    uiFontName: typeof record.uiFontName === 'string' ? record.uiFontName.trim() : '',
+    monoFont: normalizeFontMode(record.monoFont),
+    monoFontName: typeof record.monoFontName === 'string' ? record.monoFontName.trim() : '',
+    showBatchPrompt: typeof record.showBatchPrompt === 'boolean' ? record.showBatchPrompt : false,
+    batchPromptEnabled: typeof record.batchPromptEnabled === 'boolean' ? record.batchPromptEnabled : false,
+    batchPromptMode: record.batchPromptMode === 'concurrent' ? 'concurrent' : 'queue',
+    batchPromptConcurrencyLimited: typeof record.batchPromptConcurrencyLimited === 'boolean' ? record.batchPromptConcurrencyLimited : true,
+    batchPromptConcurrency: normalizeBatchPromptConcurrency(record.batchPromptConcurrency),
+    referenceImageEditAction: normalizeReferenceImageEditAction(record.referenceImageEditAction),
     zipDownloadRoutes: normalizeZipDownloadRoutes(record.zipDownloadRoutes),
+    saveLocationMode: record.saveLocationMode === 'default' ? 'default' : 'ask',
     profiles,
     activeProfileId,
   }
@@ -726,6 +789,7 @@ export function getCustomProviderDefinition(settings: Partial<AppSettings> | unk
 }
 
 export function getApiProviderLabel(settings: Partial<AppSettings> | unknown, provider: ApiProvider): string {
+  if (provider === 'google' || provider === 'xai') return NATIVE_IMAGE_PROVIDERS[provider].name
   if (provider === 'fal') return 'fal.ai'
   if (provider === 'openai') return 'OpenAI'
   if (provider === 'sb2api-async') return SUB2API_PROVIDER.name
@@ -736,15 +800,14 @@ export function isOpenAICompatibleProvider(settings: Partial<AppSettings> | unkn
   return provider === 'openai' || Boolean(getCustomProviderDefinition(settings, provider))
 }
 
-export interface ImportedProviderSettings {
-  customProviders: CustomProviderDefinition[]
-  profiles: ApiProfile[]
+export interface ImportedProviderSettings extends PresetConfig {
   presetProfileFields?: Record<string, string[]>
 }
 
 function validateCustomProviderTaskMappings(providers: CustomProviderDefinition[]) {
   const invalid = providers.find((provider) =>
-    (provider.submit.taskIdPath || provider.editSubmit?.taskIdPath) && !provider.poll,
+    ((provider.submit.taskIdPath || provider.editSubmit?.taskIdPath) && !provider.poll)
+    || provider.modelOverrides?.some((item) => (item.submit.taskIdPath || item.editSubmit?.taskIdPath) && !item.poll && !provider.poll),
   )
   if (invalid) throw new Error(`自定义服务商「${invalid.name}」配置了 taskIdPath，但缺少 poll`)
 }
@@ -773,16 +836,16 @@ export function importCustomProviderSettingsFromJson(
 
   const record = parsed as Record<string, unknown>
 
-  // 包裹结构：{customProviders: [...], profiles: [...]}
-  if (Array.isArray(record.customProviders)) {
+  // 包裹结构：profiles 可独立于自定义服务商配置导入。
+  if (Array.isArray(record.profiles) || Array.isArray(record.customProviders)) {
     if (options.deploymentConfig) validateDeploymentProviderIds(record.customProviders)
     const customProviders = normalizeCustomProviderDefinitions(record.customProviders)
-    if (customProviders.length === 0) {
-      if (!options.deploymentConfig) throw new Error('customProviders 数组中没有有效的服务商配置')
+    if (!options.deploymentConfig && Array.isArray(record.customProviders) && record.customProviders.length > 0 && !customProviders.length) {
+      throw new Error('customProviders 数组中没有有效的服务商配置')
     }
     validateCustomProviderTaskMappings(customProviders)
     const customProviderIds = new Set(customProviders.map((provider) => provider.id))
-    const nativeTransparentProviderIds = new Set(customProviders.filter(customProviderSupportsNativeTransparentBackground).map((provider) => provider.id))
+    const nativeTransparentProviderIds = new Set(customProviders.filter((provider) => customProviderSupportsNativeTransparentBackground(provider)).map((provider) => provider.id))
     const profileEntries = normalizeDeploymentProfileEntries(record.profiles, customProviderIds, nativeTransparentProviderIds, options.deploymentConfig)
     const profiles = profileEntries.map((entry) => entry.profile)
     if (!options.deploymentConfig) return { customProviders, profiles }
@@ -813,6 +876,26 @@ export function importCustomProviderDefinitionFromJson(jsonText: string, existin
   return result.customProviders[0]
 }
 
+/** 拆分模型列表，兼容中英文逗号并去重 */
+export function splitModelList(value: string) {
+  return Array.from(new Set(value.split(/[,，]/).map((item) => item.trim()).filter(Boolean)))
+}
+
+export function normalizeModelList(value: string) {
+  return splitModelList(value).join(', ')
+}
+
+/** 将模型列表解析为实际请求使用的单个模型，优先使用 preferred，其次是首页选中的模型 */
+export function resolveApiProfileModel(profile: ApiProfile, preferred?: string, customProvider?: CustomProviderDefinition | null): ApiProfile {
+  const models = splitModelList(profile.model)
+  const model = [preferred, profile.selectedModel].find((item) => item && models.includes(item)) ?? models[0] ?? profile.model
+  const resolved = { ...profile, model }
+  if (getImageModelFamily(resolved)) return { ...resolved, codexCli: false, transparentBackgroundMethod: 'local' }
+  return customProvider && !customProviderSupportsNativeTransparentBackground(customProvider, model)
+    ? { ...resolved, transparentBackgroundMethod: 'local' }
+    : resolved
+}
+
 export function getActiveApiProfile(settings: Partial<AppSettings> | unknown): ApiProfile {
   const record = settings && typeof settings === 'object' ? settings as Record<string, unknown> : {}
   const normalized = normalizeSettings(settings)
@@ -821,7 +904,7 @@ export function getActiveApiProfile(settings: Partial<AppSettings> | unknown): A
     ? record.apiMode
     : profile.apiMode
 
-  return {
+  return resolveApiProfileModel({
     ...profile,
     baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl : profile.baseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : profile.apiKey,
@@ -832,7 +915,23 @@ export function getActiveApiProfile(settings: Partial<AppSettings> | unknown): A
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : profile.apiProxy,
     streamImages: profile.provider === 'openai' && typeof record.streamImages === 'boolean' ? record.streamImages : profile.streamImages,
     streamPartialImages: normalizeStreamPartialImages(record.streamPartialImages, profile.streamPartialImages),
-  }
+  }, undefined, getCustomProviderDefinition(normalized, profile.provider))
+}
+
+export function createSettingsForApiProfile(settings: AppSettings, profile: ApiProfile): AppSettings {
+  const normalized = normalizeSettings(settings)
+  return normalizeSettings({
+    ...normalized,
+    baseUrl: profile.baseUrl,
+    apiKey: profile.apiKey,
+    model: profile.model,
+    timeout: profile.timeout,
+    apiMode: profile.apiMode,
+    codexCli: profile.codexCli,
+    apiProxy: profile.apiProxy,
+    profiles: normalized.profiles.map((item) => item.id === profile.id ? profile : item),
+    activeProfileId: profile.id,
+  })
 }
 
 export function validateApiProfile(profile: ApiProfile): string | null {
@@ -894,6 +993,11 @@ function createPresetProfileId(provider: ApiProvider, record: Record<string, unk
   }
   usedIds.add(id)
   return id
+}
+
+/** 配置内容比较忽略本地身份和默认标记，输入须已规整 */
+export function getApiProfileContentKey(profile: ApiProfile): string {
+  return JSON.stringify({ ...profile, id: undefined, isDefault: undefined })
 }
 
 function getApiProfileDedupKey(profile: ApiProfile): string {
@@ -1054,6 +1158,7 @@ const PRESET_PROFILE_DEPLOYMENT_KEYS = [
   'streamImages',
   'streamPartialImages',
   'transparentBackgroundMethod',
+  'svgModel',
   'providerDrafts',
 ] as const
 
@@ -1079,16 +1184,16 @@ export function mergePresetImportedSettings(
     lockPresetParams?: boolean
     dismissedPresetProfileIds?: string[]
     dismissedPresetProviderIds?: string[]
-    previousPresetConfig?: Pick<AppSettings, 'customProviders' | 'profiles'> | null
+    previousPresetConfig?: PresetConfig | null
     usedPresetProfileIds?: string[]
   } = {},
-): { settings: AppSettings; presetConfig: Pick<AppSettings, 'customProviders' | 'profiles'> } {
+): { settings: AppSettings; presetConfig: PresetConfig } {
   const importedRecord = isRecord(importedSettings) ? importedSettings : {}
   validateDeploymentProviderIds(importedRecord.customProviders)
   const normalizedImported = normalizeSettings(importedSettings)
   const current = normalizeSettings(currentSettings)
   const customProviderIds = new Set(normalizedImported.customProviders.map((provider) => provider.id))
-  const nativeTransparentProviderIds = new Set(normalizedImported.customProviders.filter(customProviderSupportsNativeTransparentBackground).map((provider) => provider.id))
+  const nativeTransparentProviderIds = new Set(normalizedImported.customProviders.filter((provider) => customProviderSupportsNativeTransparentBackground(provider)).map((provider) => provider.id))
   const allSourceProfileEntries = normalizeDeploymentProfileEntries(importedRecord.profiles, customProviderIds, nativeTransparentProviderIds, true).map((entry) => ({
     profile: entry.profile,
     source: entry.source,
@@ -1125,7 +1230,7 @@ export function mergePresetImportedSettings(
     .filter((profile) => {
       const previous = previousProfilesById.get(profile.id)
       if (!previous || sourceProfileIds.has(profile.id) || usedPresetProfileIds.has(profile.id) || modifiedProviderIds.has(profile.provider)) return false
-      return JSON.stringify({ ...profile, isDefault: undefined }) === JSON.stringify({ ...previous, isDefault: undefined })
+      return getApiProfileContentKey(profile) === getApiProfileContentKey(previous)
     })
     .map((profile) => profile.id))
 
@@ -1218,8 +1323,21 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   persistInputOnRestart: true,
   reuseTaskApiProfileTemporarily: false,
   alwaysShowRetryButton: false,
+  saveTasksToActiveFavoriteCollection: true,
+  retryMode: 'new',
   allowPromptRewrite: false,
+  imagePromptHints: true,
   taskCompletionNotification: false,
+  autoCheckUpdate: true,
+  writeLogFile: true,
   enterSubmit: false,
+  privacyModeShortcut: DEFAULT_PRIVACY_MODE_SHORTCUT,
+  showBatchPrompt: false,
+  batchPromptEnabled: false,
+  batchPromptMode: 'queue',
+  batchPromptConcurrencyLimited: true,
+  batchPromptConcurrency: DEFAULT_BATCH_PROMPT_CONCURRENCY,
+  referenceImageEditAction: 'ask',
   zipDownloadRoutes: DEFAULT_ZIP_DOWNLOAD_ROUTES,
+  saveLocationMode: 'ask',
 })

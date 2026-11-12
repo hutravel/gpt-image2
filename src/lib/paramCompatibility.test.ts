@@ -1,9 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
 import { createDefaultFalProfile, createDefaultOpenAIProfile, DEFAULT_SETTINGS, normalizeSettings } from './apiProfiles'
-import { getOutputImageLimitForSettings, normalizeParamsForSettings } from './paramCompatibility'
+import { getOutputImageLimitForSettings, getTaskParamSupport, normalizeParamsForSettings } from './paramCompatibility'
 
 describe('parameter compatibility', () => {
+  it.each([
+    ['gemini-nano-banana-2.1', true],
+    ['gemini-3-pro-image', false],
+    ['gemini-2.5-flash-image', false],
+  ])('captures supported Google controls for %s', (model, thinking) => {
+    const profile = createDefaultOpenAIProfile({ provider: 'google', model })
+    expect(getTaskParamSupport(DEFAULT_SETTINGS, profile)).toEqual({ thinking, complexity: false })
+  })
+
+  it.each(['gpt-image-2.5', 'gpt-image-2.6'])('uses the model for complexity: %s', (model) => {
+    // fork：model 即模型来源，Responses 模式同样以 model 判断复杂度支持
+    const profile = createDefaultOpenAIProfile({ apiMode: 'responses', model })
+    expect(getTaskParamSupport(DEFAULT_SETTINGS, profile)).toEqual({ thinking: false, complexity: model === 'gpt-image-2.6' })
+  })
+
   it('limits OpenAI output count to 10', () => {
     const openAIProfile = createDefaultOpenAIProfile({ apiKey: 'test-key', streamImages: false })
     const settings = normalizeSettings({
