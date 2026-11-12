@@ -1307,6 +1307,22 @@ export default function SettingsModal() {
                   )}
                 </div>
 
+              {/* 服务商类型 */}
+              <div className="block">
+                <span className="mb-1.5 block text-sm text-gray-600 dark:text-gray-300">服务商类型</span>
+                <Select
+                  value={activeProfile.provider}
+                  onChange={handleProviderTypeChange}
+                  onReorder={handleProviderReorder}
+                  options={providerOptions}
+                  disabled={presetConfigOnly || activeProfileLocked}
+                  className="w-full rounded-xl border border-transparent bg-black/[0.04] px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:bg-white/[0.06] dark:text-gray-200 dark:focus:border-blue-500/50"
+                />
+                <div data-selectable-text className="mt-1.5 text-xs leading-6 text-gray-500 dark:text-gray-500">
+                  选择 API 服务的供应商；模型清单和接口地址随供应商切换。Google 与 xAI 为原生接口，其余走 OpenAI 兼容协议。
+                </div>
+              </div>
+
               <ForkApiSettings draft={draft} activeProfile={activeProfile} locked={activeProfileLocked || presetConfigOnly}
                 commitSettings={commitSettings} updateActiveProfile={updateActiveProfile} showToast={showToast} />
 

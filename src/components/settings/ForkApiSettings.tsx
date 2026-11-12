@@ -474,10 +474,7 @@ export default function ForkApiSettings({ draft, activeProfile, locked, commitSe
                             onChange={() => toggleCheckedModel(item.id)}
                             className="h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300 accent-blue-500"
                           />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm text-gray-800 dark:text-gray-100">{item.label}</span>
-                            <span className="block truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">{item.id}</span>
-                          </span>
+                          <span className="min-w-0 flex-1 truncate font-mono text-sm text-gray-800 dark:text-gray-100">{item.id}</span>
                         </label>
                       )
                     })}
