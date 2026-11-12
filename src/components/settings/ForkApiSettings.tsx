@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ApiProfile, AppSettings, CustomProviderDefinition } from '../../types'
-import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL, DEFAULT_RESPONSES_MODEL, switchApiProfileProvider } from '../../lib/apiProfiles'
+import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL, DEFAULT_RESPONSES_MODEL, splitModelList, switchApiProfileProvider } from '../../lib/apiProfiles'
 import { useCloseOnEscape } from '../../hooks/useCloseOnEscape'
 import { CloseIcon } from '../icons'
 
@@ -101,6 +101,40 @@ function createCustomAsyncEndpointProvider(endpointPath: string): CustomProvider
 }
 
 
+/** 按服务商分组的可选生图模型；覆盖 OpenAI 兼容接口中的 GPT Image 系列与 Google / xAI 原生图像模型 */
+const MODEL_CATALOG: Record<'openai' | 'google' | 'xai', { id: string; label: string }[]> = {
+  openai: [
+    { id: 'gpt-image-2.6-sunburst', label: 'GPT Image 2.6 Sunburst' },
+    { id: 'gpt-image-2.6-flare', label: 'GPT Image 2.6 Flare' },
+    { id: 'gpt-image-2.5-sunburst', label: 'GPT Image 2.5 Sunburst' },
+    { id: 'gpt-image-2.5-flare', label: 'GPT Image 2.5 Flare' },
+    { id: 'gpt-image-2', label: 'GPT Image 2' },
+    { id: 'gpt-image-1', label: 'GPT Image 1' },
+  ],
+  google: [
+    { id: 'gemini-nano-banana-2.1', label: 'Gemini 2.1 Nano Banana' },
+    { id: 'gemini-3.1-flash-image', label: 'Gemini 3.1 Flash Image' },
+    { id: 'gemini-3.1-flash-image-preview', label: 'Gemini 3.1 Flash Image (Preview)' },
+    { id: 'gemini-3.1-flash-lite-image', label: 'Gemini 3.1 Flash Lite Image' },
+    { id: 'gemini-3-pro-image', label: 'Gemini 3 Pro Image' },
+  ],
+  xai: [
+    { id: 'grok-imagine-image-2.0', label: 'Grok Imagine Image 2.0' },
+    { id: 'grok-imagine-1.5-apimart', label: 'Grok Imagine 1.5 (apimart)' },
+    { id: 'grok-imagine-1.5-ext', label: 'Grok Imagine 1.5 (ext)' },
+  ],
+}
+
+const DEFAULT_CHECKED_MODELS = ['gpt-image-2.6-sunburst', 'gpt-image-2']
+
+/** 当前服务商可见的模型清单：OpenAI 兼容接口用 GPT 清单，Google/xAI 用各自原生清单；其他（fal、自定义）为空 */
+function getCatalogForProvider(provider: string) {
+  if (provider === 'google') return MODEL_CATALOG.google
+  if (provider === 'xai') return MODEL_CATALOG.xai
+  // OpenAI 兼容接口与其余走 OpenAI 兼容协议的服务商都展示 GPT 清单
+  return MODEL_CATALOG.openai
+}
+
 interface ForkApiSettingsProps {
   draft: AppSettings
   activeProfile: ApiProfile
@@ -116,6 +150,7 @@ export default function ForkApiSettings({ draft, activeProfile, locked, commitSe
   const [endpointSettingsSelection, setEndpointSettingsSelection] = useState<'images' | 'custom'>('images')
   const [customEndpointPathInput, setCustomEndpointPathInput] = useState('tasks')
   const [showModelSettings, setShowModelSettings] = useState(false)
+  const [checkedModels, setCheckedModels] = useState<string[]>([])
   const [customModelInput, setCustomModelInput] = useState('')
   const activeCustomProvider = draft.customProviders.find((provider) => provider.id === activeProfile.provider)
   const activeEndpoint = activeProfile.provider === CUSTOM_ASYNC_ENDPOINT_PROVIDER_ID || activeProfile.provider === LEGACY_FAST_AI_TASKS_PROVIDER_ID ? 'custom' : 'images'
@@ -145,17 +180,49 @@ export default function ForkApiSettings({ draft, activeProfile, locked, commitSe
   }
 
   const openModelSettings = () => {
-    setCustomModelInput(activeProfile.model || '')
+    // 已保存的模型勾选；全新配置时默认勾选 2.6 与 2
+    const saved = splitModelList(activeProfile.model).filter(Boolean)
+    const catalog = getCatalogForProvider(activeProfile.provider)
+    const inCatalog = new Set(catalog.map((item) => item.id))
+    const existingCustom = saved.filter((id) => !inCatalog.has(id))
+    const checked = saved.length
+      ? [...saved]
+      : [...DEFAULT_CHECKED_MODELS]
+    setCheckedModels(checked)
+    setCustomModelInput(existingCustom.join(', '))
     setShowModelSettings(true)
   }
 
-  const applyCustomModel = () => {
-    const trimmed = customModelInput.trim()
+  const toggleCheckedModel = (id: string) => {
+    setCheckedModels((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id])
+  }
+
+  const addCustomModels = () => {
+    const additions = splitModelList(customModelInput).filter((id) => !checkedModels.includes(id))
+    if (!additions.length) return
+    setCheckedModels((prev) => [...prev, ...additions])
+    setCustomModelInput('')
+  }
+
+  const applyCheckedModels = () => {
+    const ordered = getCatalogForProvider(activeProfile.provider)
+      .map((item) => item.id)
+      .filter((id) => checkedModels.includes(id))
+    const inCatalog = new Set(ordered)
+    const extras = checkedModels.filter((id) => !inCatalog.has(id))
+    const next = [...ordered, ...extras]
+    if (!next.length) {
+      showToast('请至少选择一个模型', 'error')
+      return
+    }
     const fallbackModel = activeProfile.provider === 'fal' ? DEFAULT_FAL_MODEL : getDefaultModelForMode(activeProfile.apiMode)
-    const nextModel = trimmed || fallbackModel
-    updateActiveProfile({ model: nextModel }, true)
+    // 保持当前选中的模型仍在新列表中，否则回落到列表首项（或默认模型）
+    const models = splitModelList(activeProfile.model)
+    const current = activeProfile.selectedModel ?? models[0]
+    const keepSelected = current && next.includes(current) ? current : next[0] ?? fallbackModel
+    updateActiveProfile({ model: next.join(', '), selectedModel: keepSelected }, true)
     setShowModelSettings(false)
-    showToast('模型 ID 已更新', 'success')
+    showToast(`已选择 ${next.length} 个模型`, 'success')
   }
 
   const selectImagesEndpoint = () => {
@@ -376,7 +443,7 @@ export default function ForkApiSettings({ draft, activeProfile, locked, commitSe
               <div className="mb-5 flex items-center justify-between gap-4">
                 <div>
                   <h3 className="text-base font-bold text-gray-800 dark:text-gray-100">设置模型 ID</h3>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">填写当前配置使用的模型 ID，留空使用默认值。</p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">勾选要启用的生图模型，或添加自定义模型 ID。</p>
                 </div>
                 <button
                   type="button"
@@ -388,36 +455,94 @@ export default function ForkApiSettings({ draft, activeProfile, locked, commitSe
                 </button>
               </div>
 
-              <div className="space-y-3">
-                <label className="block" onClick={(event) => event.stopPropagation()}>
-                  <span className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-300">模型 ID</span>
-                  <div className="flex items-center rounded-xl border border-blue-300/70 bg-white px-3 shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-blue-400/30 dark:bg-gray-900/70">
-                    <input
-                      value={customModelInput}
-                      onChange={(event) => setCustomModelInput(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault()
-                          applyCustomModel()
-                        }
-                      }}
-                      placeholder={activeProfile.provider === 'fal' ? DEFAULT_FAL_MODEL : getDefaultModelForMode(activeProfile.apiMode)}
-                      autoFocus
-                      className="min-w-0 flex-1 bg-transparent py-2.5 text-sm text-gray-800 outline-none placeholder:text-gray-400 dark:text-gray-100"
-                    />
+              <div className="space-y-4" onClick={(event) => event.stopPropagation()}>
+                <div>
+                  <span className="mb-2 block text-xs font-medium text-gray-600 dark:text-gray-300">
+                    生图模型（{activeProfile.provider === 'google' ? 'Google' : activeProfile.provider === 'xai' ? 'xAI' : 'OpenAI 兼容'}）
+                  </span>
+                  <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-gray-200/70 bg-gray-50/70 p-2 dark:border-white/[0.08] dark:bg-white/[0.03]">
+                    {getCatalogForProvider(activeProfile.provider).map((item) => {
+                      const checked = checkedModels.includes(item.id)
+                      return (
+                        <label
+                          key={item.id}
+                          className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors ${checked ? 'bg-blue-500/10' : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleCheckedModel(item.id)}
+                            className="h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300 accent-blue-500"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm text-gray-800 dark:text-gray-100">{item.label}</span>
+                            <span className="block truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">{item.id}</span>
+                          </span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-300">自定义模型 ID</span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex min-w-0 flex-1 items-center rounded-xl border border-blue-300/70 bg-white px-3 shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-blue-400/30 dark:bg-gray-900/70">
+                      <input
+                        value={customModelInput}
+                        onChange={(event) => setCustomModelInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            addCustomModels()
+                          }
+                        }}
+                        placeholder="输入模型 ID，多个以逗号分隔"
+                        className="min-w-0 flex-1 bg-transparent py-2.5 text-sm text-gray-800 outline-none placeholder:text-gray-400 dark:text-gray-100"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addCustomModels}
+                      disabled={!customModelInput.trim()}
+                      className="min-h-11 shrink-0 cursor-pointer rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                    >
+                      添加
+                    </button>
                   </div>
                   <div data-selectable-text className="mt-1.5 text-xs leading-relaxed text-gray-500 dark:text-gray-500">
-                    发送请求时使用的模型标识。留空将使用对应模式的默认模型。
+                    添加后进入已选列表；多个模型以逗号分隔，可在首页的模型参数中切换。
                   </div>
                 </label>
+
+                {checkedModels.length > 0 && (
+                  <div>
+                    <span className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-300">已选（{checkedModels.length}）</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {checkedModels.map((id) => (
+                        <span key={id} className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-blue-500/10 py-1 pl-2.5 pr-1.5 text-xs text-gray-700 dark:text-gray-200">
+                          <span className="truncate font-mono">{id}</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleCheckedModel(id)}
+                            className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full text-gray-400 transition hover:bg-blue-500/20 hover:text-gray-600 dark:hover:text-gray-200"
+                            aria-label={`移除 ${id}`}
+                          >
+                            <CloseIcon className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <button
                 type="button"
-                onClick={applyCustomModel}
+                onClick={applyCheckedModels}
                 className="mt-4 min-h-11 w-full cursor-pointer rounded-xl bg-blue-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
               >
-                应用模型 ID
+                确定
               </button>
             </div>
           </div>,
