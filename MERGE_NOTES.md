@@ -22,7 +22,7 @@
 - Image Paint 品牌、提示词广场及全部本地数据源、同步脚本；Header/App 的广场入口。
 - 输入框 `@图N` 缩略图提及（getImageMentionTagHtml），采纳上游基于记录选区的插入方式（IME 修复）。
 - `model` 是唯一模型来源（含 Responses 图像工具），`imageGenerationModel` 仅作旧数据兜底；相关上游测试已按此语义调整。
-- 新配置默认模型 `gpt-image-2`、Base64 开启（tri-state 保留，record 未设置时回落到 createDefault 的 true）、超时 600 秒；skill 文档与 LLM 提示词同步改为 `gpt-image-2`。
+- 新配置默认模型 `gpt-image-2.6-sunburst`（与上游一致）、Base64 开启（tri-state 保留，record 未设置时回落到 createDefault 的 true）、超时 600 秒；skill 文档与 LLM 提示词同步。
 - Worker 图片代理路由保留，与上游 `apiFetch`（Tauri 感知）合并。
 - 移除 Agent 对话界面、设置、动作、专用 API 及测试；`SettingsTab` 无 `agent` 页；`db.ts` 保留旧 `agentConversations` store 的原样存取以保护历史图片引用（`LegacyConversationRecord`）。
 - 隐私模式快照无 agent 字段；`hasInterruptibleOperations(tasks, batchProgress)` 无对话参数。

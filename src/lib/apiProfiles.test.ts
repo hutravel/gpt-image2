@@ -1738,9 +1738,9 @@ describe('custom providers', () => {
 
 
 describe('fork API configuration compatibility', () => {
-  it('defaults to gpt-image-2, Base64 and 600 seconds', () => {
+  it('defaults to gpt-image-2.6-sunburst, Base64 and 600 seconds', () => {
     expect(getActiveApiProfile(normalizeSettings({}))).toMatchObject({
-      model: 'gpt-image-2', timeout: 600, responseFormatB64Json: true, responseFormatUrl: false,
+      model: 'gpt-image-2.6-sunburst', timeout: 600, responseFormatB64Json: true, responseFormatUrl: false,
     })
   })
 
