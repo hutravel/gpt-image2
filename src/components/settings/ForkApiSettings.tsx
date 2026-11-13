@@ -101,8 +101,8 @@ function createCustomAsyncEndpointProvider(endpointPath: string): CustomProvider
 }
 
 
-/** 按服务商分组的可选生图模型；覆盖 OpenAI 兼容接口中的 GPT Image 系列与 Google / xAI 原生图像模型 */
-const MODEL_CATALOG: Record<'openai' | 'google' | 'xai', { id: string; label: string }[]> = {
+/** 按服务商分组的可选生图模型；覆盖 OpenAI 兼容接口中的 GPT Image 系列与 Google / xAI / 字节跳动原生图像模型 */
+const MODEL_CATALOG: Record<'openai' | 'google' | 'xai' | 'bytedance', { id: string; label: string }[]> = {
   openai: [
     { id: 'gpt-image-2.6-sunburst', label: 'GPT Image 2.6 Sunburst' },
     { id: 'gpt-image-2.6-flare', label: 'GPT Image 2.6 Flare' },
@@ -123,14 +123,18 @@ const MODEL_CATALOG: Record<'openai' | 'google' | 'xai', { id: string; label: st
     { id: 'grok-imagine-1.5-apimart', label: 'Grok Imagine 1.5 (apimart)' },
     { id: 'grok-imagine-1.5-ext', label: 'Grok Imagine 1.5 (ext)' },
   ],
+  bytedance: [
+    { id: 'doubao-seedream-5-5-261028', label: 'Seedream 5.5' },
+  ],
 }
 
 const DEFAULT_CHECKED_MODELS = ['gpt-image-2.6-sunburst', 'gpt-image-2']
 
-/** 当前服务商可见的模型清单：OpenAI 兼容接口用 GPT 清单，Google/xAI 用各自原生清单；其他（fal、自定义）为空 */
+/** 当前服务商可见的模型清单：OpenAI 兼容接口用 GPT 清单，Google/xAI/字节跳动用各自原生清单；其他（fal、自定义）为空 */
 function getCatalogForProvider(provider: string) {
   if (provider === 'google') return MODEL_CATALOG.google
   if (provider === 'xai') return MODEL_CATALOG.xai
+  if (provider === 'bytedance') return MODEL_CATALOG.bytedance
   // OpenAI 兼容接口与其余走 OpenAI 兼容协议的服务商都展示 GPT 清单
   return MODEL_CATALOG.openai
 }
@@ -458,7 +462,7 @@ export default function ForkApiSettings({ draft, activeProfile, locked, commitSe
               <div className="space-y-4" onClick={(event) => event.stopPropagation()}>
                 <div>
                   <span className="mb-2 block text-xs font-medium text-gray-600 dark:text-gray-300">
-                    生图模型（{activeProfile.provider === 'google' ? 'Google' : activeProfile.provider === 'xai' ? 'xAI' : 'OpenAI 兼容'}）
+                    生图模型（{activeProfile.provider === 'google' ? 'Google' : activeProfile.provider === 'xai' ? 'xAI' : activeProfile.provider === 'bytedance' ? '字节跳动' : 'OpenAI 兼容'}）
                   </span>
                   <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-gray-200/70 bg-gray-50/70 p-2 dark:border-white/[0.08] dark:bg-white/[0.03]">
                     {getCatalogForProvider(activeProfile.provider).map((item) => {

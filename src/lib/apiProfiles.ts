@@ -40,12 +40,13 @@ export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
 export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'
 export const NATIVE_IMAGE_PROVIDERS = {
   google: { name: 'Google', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-nano-banana-2.1' },
+  bytedance: { name: '字节跳动', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3/', model: 'doubao-seedream-5-5-261028' },
   xai: { name: 'xAI', baseUrl: 'https://api.x.ai/v1', model: 'grok-imagine-image-2.0' },
 }
 export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
 export const DEFAULT_API_TIMEOUT = 600
 
-const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai', 'google', 'xai', 'sb2api-async', 'fal'])
+const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai', 'google', 'xai', 'bytedance', 'sb2api-async', 'fal'])
 const DEFAULT_CUSTOM_PROVIDER_PATHS = {
   generationPath: 'images/generations',
   editPath: 'images/edits',
@@ -144,7 +145,7 @@ function normalizeZipDownloadRoutes(value: unknown) {
 function normalizeProviderOrder(value: unknown, customProviders: CustomProviderDefinition[]): string[] | undefined {
   if (!Array.isArray(value)) return undefined
 
-  const providerIds = ['openai', 'google', 'xai', 'sb2api-async', 'fal', ...customProviders.map((provider) => provider.id)]
+  const providerIds = ['openai', 'google', 'xai', 'bytedance', 'sb2api-async', 'fal', ...customProviders.map((provider) => provider.id)]
   const knownIds = new Set(providerIds)
   const ordered = value
     .map(String)
@@ -188,7 +189,7 @@ function normalizeRequestMethod(value: unknown, fallback: CustomProviderRequestM
 }
 
 function normalizeContentType(value: unknown, fallback: CustomProviderContentType = 'json'): CustomProviderContentType {
-  return value === 'multipart' ? 'multipart' : fallback
+  return value === 'multipart' || value === 'json' ? value : fallback
 }
 
 function normalizeBodyTemplate(value: unknown, fallback: Record<string, unknown>): Record<string, unknown> {
@@ -377,6 +378,7 @@ export function createDefaultOpenAIProfile(overrides: Partial<ApiProfile> = {}):
     model: DEFAULT_API_URL_PATCH?.model ?? (apiMode === 'responses' ? DEFAULT_RESPONSES_MODEL : DEFAULT_IMAGES_MODEL),
     imageGenerationModel: DEFAULT_API_URL_PATCH?.imageGenerationModel ?? DEFAULT_IMAGES_MODEL,
     timeout: DEFAULT_API_TIMEOUT,
+    // fork 默认开启 Base64（中转站直接返回图片数据更可靠）；显式设置优先于域名默认
     responseFormatB64Json: true,
     responseFormatUrl: false,
     reasoningEffort: DEFAULT_API_URL_PATCH?.reasoningEffort,
@@ -432,7 +434,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
   }
   const savedDraft = providerDrafts[provider]
 
-  if (provider === 'google' || provider === 'xai') {
+  if (provider === 'google' || provider === 'xai' || provider === 'bytedance') {
     const defaults = NATIVE_IMAGE_PROVIDERS[provider]
     return {
       ...profile,
@@ -444,7 +446,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
       apiProxy: false,
       streamImages: false,
       responseFormatB64Json: savedDraft?.responseFormatB64Json,
-      transparentBackgroundMethod: 'local',
+      transparentBackgroundMethod: provider === 'bytedance' ? savedDraft?.transparentBackgroundMethod ?? 'api' : 'local',
       providerDrafts,
     }
   }
@@ -547,7 +549,7 @@ function normalizeProviderDraft(
     reasoningEffort: normalizeReasoningEffort(input.reasoningEffort),
     codexCli: typeof input.codexCli === 'boolean' ? input.codexCli : fallback.codexCli,
     apiProxy: typeof input.apiProxy === 'boolean' ? input.apiProxy : fallback.apiProxy,
-    responseFormatB64Json: input.responseFormatB64Json === true ? true : undefined,
+    responseFormatB64Json: typeof input.responseFormatB64Json === 'boolean' ? input.responseFormatB64Json : undefined,
     responseFormatUrl: input.responseFormatUrl === true && input.responseFormatB64Json !== true,
     streamImages: typeof input.streamImages === 'boolean' ? input.streamImages : fallback.streamImages,
     streamPartialImages: normalizeStreamPartialImages(input.streamPartialImages, fallback.streamPartialImages),
@@ -580,9 +582,9 @@ export function normalizeApiProfile(
   const rawProvider = typeof record.provider === 'string' ? record.provider : ''
   const provider: ApiProvider = BUILT_IN_PROVIDER_IDS.has(rawProvider) || customProviderIds.has(rawProvider) ? rawProvider : 'openai'
   const apiMode: ApiMode = provider === 'openai' && record.apiMode === 'responses' ? 'responses' : 'images'
-  const nativeProvider = provider === 'google' || provider === 'xai' ? NATIVE_IMAGE_PROVIDERS[provider] : null
+  const nativeProvider = provider === 'google' || provider === 'xai' || provider === 'bytedance' ? NATIVE_IMAGE_PROVIDERS[provider] : null
   const providerFallback = nativeProvider
-    ? { baseUrl: nativeProvider.baseUrl, model: nativeProvider.model, transparentBackgroundMethod: 'local' as const, ...fallback }
+    ? { baseUrl: nativeProvider.baseUrl, model: nativeProvider.model, transparentBackgroundMethod: provider === 'bytedance' ? 'api' as const : 'local' as const, ...fallback }
     : customProviderIds.has(provider)
     ? { transparentBackgroundMethod: 'local' as const, ...fallback }
     : fallback
@@ -593,7 +595,7 @@ export function normalizeApiProfile(
   const streamImages = provider === 'openai'
     ? typeof record.streamImages === 'boolean' ? record.streamImages : defaults.streamImages
     : false
-  const nativeTransparentBackgroundUnavailable = Boolean(nativeProvider) || (customProviderIds.has(provider) && !nativeTransparentProviderIds.has(provider))
+  const nativeTransparentBackgroundUnavailable = (Boolean(nativeProvider) && provider !== 'bytedance') || (customProviderIds.has(provider) && !nativeTransparentProviderIds.has(provider))
 
   return {
     ...defaults,
@@ -789,7 +791,7 @@ export function getCustomProviderDefinition(settings: Partial<AppSettings> | unk
 }
 
 export function getApiProviderLabel(settings: Partial<AppSettings> | unknown, provider: ApiProvider): string {
-  if (provider === 'google' || provider === 'xai') return NATIVE_IMAGE_PROVIDERS[provider].name
+  if (provider === 'google' || provider === 'xai' || provider === 'bytedance') return NATIVE_IMAGE_PROVIDERS[provider].name
   if (provider === 'fal') return 'fal.ai'
   if (provider === 'openai') return 'OpenAI'
   if (provider === 'sb2api-async') return SUB2API_PROVIDER.name
@@ -890,7 +892,10 @@ export function resolveApiProfileModel(profile: ApiProfile, preferred?: string, 
   const models = splitModelList(profile.model)
   const model = [preferred, profile.selectedModel].find((item) => item && models.includes(item)) ?? models[0] ?? profile.model
   const resolved = { ...profile, model }
-  if (getImageModelFamily(resolved)) return { ...resolved, codexCli: false, transparentBackgroundMethod: 'local' }
+  const family = getImageModelFamily(resolved)
+  if (family) {
+    return { ...resolved, codexCli: false, streamImages: false, transparentBackgroundMethod: family === 'seedream' && (!customProvider || customProviderSupportsNativeTransparentBackground(customProvider, model)) ? resolved.transparentBackgroundMethod : 'local' }
+  }
   return customProvider && !customProviderSupportsNativeTransparentBackground(customProvider, model)
     ? { ...resolved, transparentBackgroundMethod: 'local' }
     : resolved
@@ -1341,3 +1346,13 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   zipDownloadRoutes: DEFAULT_ZIP_DOWNLOAD_ROUTES,
   saveLocationMode: 'ask',
 })
+
+export function shouldReturnBase64(profile: Pick<ApiProfile, 'baseUrl' | 'responseFormatB64Json'>) {
+  if (profile.responseFormatB64Json !== undefined) return profile.responseFormatB64Json
+  try {
+    const host = new URL(profile.baseUrl).hostname
+    return ['x.ai', 'volces.com', 'bytepluses.com'].some((domain) => host === domain || host.endsWith(`.${domain}`))
+  } catch {
+    return false
+  }
+}

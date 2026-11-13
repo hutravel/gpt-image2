@@ -83,6 +83,11 @@ with mock.patch.object(mod.urllib.request, 'urlopen', side_effect=http_urlopen):
         f'http://127.0.0.1:{port}/v1beta/models/gemini-3.1-flash-image:generateContent', data=b'{}', headers=headers))
     assert json.loads(r.read()) == {'ok': True}
 
+    # 4. POST /api/v3/images/generations（bytedance ark）
+    r = real_urlopen(urllib.request.Request(
+        f'http://127.0.0.1:{port}/api/v3/images/generations', data=b'{"model":"doubao-seedream-5-5-261028"}', headers=headers))
+    assert json.loads(r.read()) == {'ok': True}
+
 m, p, uh, b = received[0]
 assert (m, p) == ('POST', '/v1/images/generations'), (m, p)
 assert uh['Authorization'] == 'Bearer test-key'
@@ -99,6 +104,11 @@ assert (m, p) == ('POST', '/v1beta/models/gemini-3.1-flash-image:generateContent
 lowered = {k.lower(): v for k, v in uh.items()}
 assert lowered['x-goog-api-key'] == 'test-key', uh
 assert 'authorization' not in lowered
+
+m, p, uh, b = received[3]
+assert (m, p) == ('POST', '/api/v3/images/generations'), (m, p)
+assert uh['Authorization'] == 'Bearer test-key'
+assert b == b'{"model":"doubao-seedream-5-5-261028"}'
 
 print('forwarding + auth header + CORS checks OK')
 srv.shutdown()

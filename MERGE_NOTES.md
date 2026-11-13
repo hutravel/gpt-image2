@@ -1,36 +1,37 @@
 # 上游合并记录
 
-本次合并分支：`merge/upstream-v0.9.0`。
-合并基线：`main`（`2350464`，fork v0.7.15）。
-合入上游：`v0.9.0`（`5e1f5e7`，2026-11-07），共 152 个提交、308 个文件。
+本次合并分支：`merge/upstream-v0.9.1`。
+合并基线：`main`（`6f08238`，fork v0.9.0-fork.1；与上游 merge-base 为 `6f8f44d`，v0.9.1 的前 4 个文档提交已含于 fork）。
+合入上游：`v0.9.1`（`5d5c3b7`，2026-11-13），新增 4 个提交。
 
 ## 本次合入的上游功能
 
-- Google（Gemini / Nano Banana）与 xAI（Grok Imagine）原生图像接口；OpenAI 兼容 Images API 也可用这两类模型，参数随模型 ID 自动切换。
-- 参数栏按模型提供比例、分辨率、思考等级和质量选项，不支持的项置灰并说明原因。
-- Gemini 可开启 Google Search / Image Search，任务详情展示搜索来源。
-- 自定义服务商按模型配置接口（`modelOverrides`、`{model}` 占位符、`$inputImages.base64/urls`、JSON 字符串结果解析）。
-- GPT Image 2.6 适配：复杂度、GIF 帧参数、SVG 输出、markup 独立标注图层。
-- 画板（SketchBoard）与评论标注、遮罩编辑器统一风格。
-- 隐私模式（默认 Ctrl+Shift+H）、外观配置（浅色/深色/跟随系统）、界面与代码字体选择。
-- 多提示词批量提交、多模型切换（逗号分隔 + selectedModel）、失败任务原位重试（覆盖式/新建）。
-- 数据导出导入进度与取消、导入配置链接逐项 diff 确认、画廊虚拟列表、图片二进制存储与旧数据后台迁移。
-- Windows 桌面客户端（Tauri）：SQLite 存储、自绘标题栏、应用内更新、网络代理、数据目录迁移、CLI `gpt-image-playground` 与随附 Skill；部署工作流（deploy.yml）保留 fork 的跳过上游 release 校验逻辑，并合入桌面端 `workflow_run` 触发与签名密钥。
+- 字节跳动（Ark / Seedream 5.5）原生图像接口：生成与参考图编辑（最多 10 张）、PNG/JPEG 格式、自动/透明/不透明背景、水印开关（默认关闭）。
+- 分辨率选项扩展：Seedream 支持 1K / 1.5K / 2K 三档、预设比例、自定义比例与宽高，超限自动规整；`size.ts` 新增 `SEEDREAM_RESOLUTIONS` 与规整函数。
+- `shouldReturnBase64()`：xAI（x.ai）、字节跳动（volces.com / bytepluses.com）官方域名默认开启 `response_format: b64_json`，显式设置优先于域名默认；`responseFormatB64Json` 改为 true/false/undefined 三态。
+- 自定义服务商 JSON 请求修复（图生图不再误发 multipart）；`normalizeContentType` 接受 `json`。
+- 设置说明行高修复（`leading-6`）；网页版操作指南移除导入链接说明（客户端保留）；预置配置默认模型同步 `gpt-image-2.6-sunburst`。
+- 新增公告卡片 models-intro-3（Gemini / Grok / Seedream）；CLI 支持 Seedream 尺寸、水印与背景参数（新增 `cliBridge.test.ts`）。
 
-## 保留的 fork 决策
+## 冲突解决（8 个文件）
 
-- Image Paint 品牌、提示词广场及全部本地数据源、同步脚本；Header/App 的广场入口。
-- 输入框 `@图N` 缩略图提及（getImageMentionTagHtml），采纳上游基于记录选区的插入方式（IME 修复）。
-- `model` 是唯一模型来源（含 Responses 图像工具），`imageGenerationModel` 仅作旧数据兜底；相关上游测试已按此语义调整。
-- 新配置默认模型 `gpt-image-2.6-sunburst`（与上游一致）、Base64 开启（tri-state 保留，record 未设置时回落到 createDefault 的 true）、超时 600 秒；skill 文档与 LLM 提示词同步。
-- Worker 图片代理路由保留，与上游 `apiFetch`（Tauri 感知）合并。
-- 移除 Agent 对话界面、设置、动作、专用 API 及测试；`SettingsTab` 无 `agent` 页；`db.ts` 保留旧 `agentConversations` store 的原样存取以保护历史图片引用（`LegacyConversationRecord`）。
-- 隐私模式快照无 agent 字段；`hasInterruptibleOperations(tasks, batchProgress)` 无对话参数。
-- CLI 设置键列表去掉 agent 相关键。
+- `apiProfiles.ts` / `openaiCompatibleImageApi.ts`：采纳上游三态 base64 与 `shouldReturnBase64`，保留 fork 的 `responseFormatUrl`（「返回 URL」开关）互斥语义与云函数转发；`createDefault*Profile` 不再硬编码 `responseFormatB64Json: true`。
+- `SettingsModal.tsx`：保留 ForkApiSettings（无 API Key/URL/模型 ID 输入框）与 fork 服务商白名单（无 sub2api/fal），合入「字节跳动」选项、Base64 开关的 bytedance 支持与 `leading-6`。
+- `inputParamsPanel.tsx`：恢复 fork 无 agent 钩子的数量输入，套用上游 `family !== 'seedream'` 条件；Seedream 专属格式/背景/水印控件自动合入。
+- `package.json` / `package-lock.json` / `sw.js` / `RELEASE.md`：版本号统一 `0.9.1-fork.1`，缓存名 `gpt-image-playground-v0.9.1-fork`，RELEASE.md 按 fork 格式重写。
+
+## Fork 适配
+
+- `ForkApiSettings.tsx`：MODEL_CATALOG 新增 bytedance 分组（`doubao-seedream-5-5-261028`），模型弹窗标题支持「字节跳动」。
+- 云函数转发 Seedream：`usesImageApiWorkerProxy` 经 `getImageModelFamily` 的 seedream 分支自动覆盖；新增 `getWorkerProxyPathPrefix`（bytedance 用 `api/v3`，其余 `v1`），请求与轮询的代理 URL 及 `getProxyUpstreamBaseUrl` 版本段剥离同步区分；`deploy/fc/index.py` 白名单增加 `/api/v3/images/generations|edits`（Bearer 认证），`smoke_test.py` 补 ark 转发用例（已通过）。
+- 服务商切换经 `switchApiProfileProvider` 的 bytedance 分支自动带入 Ark 默认地址与模型、`transparentBackgroundMethod: 'api'`。
 
 ## 验证
 
-- `tsc --noEmit` 0 错误（源码 + 测试）。
-- `vitest run`：63 个文件、869 项通过（1 项跳过）。
-- `npm run build` 生产构建通过（大 chunk 提示与上游一致）。
-- 浏览器交互验收与真实出图 API 未执行。
+- `tsc -b` 0 错误（源码 + 测试）。
+- 云函数冒烟 `python -I smoke_test.py` 通过（含 ark 路径）。
+- 其余验证（vitest / build / 浏览器交互）见提交前记录。
+
+## 云函数部署提醒
+
+`deploy/fc/index.py` 变更后需在阿里云函数计算重新部署 `gpt-image-aqzuoonyeh` 函数，否则 bytedance 官方域名的云函数转发返回 404（经中转站的 OpenAI 兼容场景不受影响）。

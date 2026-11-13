@@ -1,3 +1,4 @@
+import { shouldReturnBase64 } from './apiProfiles'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_FAL_BASE_URL,
@@ -1663,7 +1664,7 @@ describe('custom providers', () => {
       ],
     })
 
-    expect(settings.providerOrder).toEqual(['fal', 'openai', 'google', 'xai', 'sb2api-async', 'custom-alpha', 'custom-beta'])
+    expect(settings.providerOrder).toEqual(['fal', 'openai', 'google', 'xai', 'bytedance', 'sb2api-async', 'custom-alpha', 'custom-beta'])
   })
 
   it('keeps active custom providers in Images API mode when legacy apiMode is responses', () => {
@@ -1781,4 +1782,48 @@ describe('model list', () => {
     const profile = normalizeApiProfile({ id: 'p1', model: 'a,b', selectedModel: 'b' })
     expect(getActiveApiProfile({ profiles: [profile], activeProfileId: 'p1' }).model).toBe('b')
   })
+})
+
+
+describe('native provider Base64 defaults', () => {
+  it.each(['xai', 'bytedance'] as const)('enables Base64 for a new %s configuration without leaking into other providers', (provider) => {
+    const profile = switchApiProfileProvider(createDefaultOpenAIProfile(), provider)
+    expect(shouldReturnBase64(profile)).toBe(true)
+    // fork 的 openai 默认配置显式开启 Base64，切回时经草稿保留显式值；自定义服务商草稿无显式值，不继承
+    expect(switchApiProfileProvider(profile, 'openai').responseFormatB64Json).toBe(true)
+    expect(switchApiProfileProvider(profile, 'custom-test', { id: 'custom-test', name: '测试', submit: { path: 'images/generations' } }).responseFormatB64Json).toBeUndefined()
+    const disabled = normalizeApiProfile({ ...profile, responseFormatB64Json: false })
+    const other = switchApiProfileProvider(disabled, 'openai')
+    expect(switchApiProfileProvider(other, provider).responseFormatB64Json).toBeFalsy()
+  })
+})
+
+it('defaults Base64 by official domain and preserves explicit choices', () => {
+  for (const baseUrl of ['https://api.x.ai/v1', 'https://ark.cn-beijing.volces.com/api/v3', 'https://ark.ap-southeast.bytepluses.com/api/v3', 'https://ark.eu-west.bytepluses.com/api/v3']) {
+    expect(shouldReturnBase64({ baseUrl })).toBe(true)
+    expect(shouldReturnBase64(normalizeApiProfile({ baseUrl, responseFormatB64Json: false }))).toBe(false)
+  }
+  for (const baseUrl of ['https://example.com/v1', 'https://api.x.ai.example.com/v1', 'https://fakevolces.com', 'https://bytepluses.com.example.org', 'invalid']) {
+    expect(shouldReturnBase64({ baseUrl })).toBe(false)
+  }
+})
+
+it('keeps automatic defaults and explicit choices distinct across repeated URL changes and reloads', () => {
+  for (const choice of [undefined, true, false]) {
+    let profile = createDefaultOpenAIProfile({ responseFormatB64Json: choice })
+    for (const [baseUrl, automatic] of [
+      ['https://example.com/v1', false],
+      ['https://ark.eu-west.bytepluses.com/api/v3', true],
+      ['https://other.example.com/v1', false],
+      ['https://api.x.ai/v1', true],
+      ['', false],
+      ['https://ark.cn-beijing.volces.com/api/v3', true],
+    ] as const) {
+      profile = normalizeApiProfile(JSON.parse(JSON.stringify({ ...profile, baseUrl })))
+      // fork 未设置（undefined）时持久化往返回落默认配置的 true；显式值原样保留并优先于域名默认
+      const persisted = choice ?? true
+      expect(profile.responseFormatB64Json).toBe(persisted)
+      expect(shouldReturnBase64(profile)).toBe(persisted)
+    }
+  }
 })

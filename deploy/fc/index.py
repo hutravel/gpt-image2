@@ -12,10 +12,12 @@ ALLOWED_ORIGINS = {
     "https://hutravel.github.io",
 }
 
-# 精确路径（OpenAI Images 生成/编辑）
+# 精确路径（OpenAI Images 生成/编辑、字节跳动 Ark Images 生成/编辑）
 ALLOWED_PATHS = {
     "/v1/images/generations",
     "/v1/images/edits",
+    "/api/v3/images/generations",
+    "/api/v3/images/edits",
 }
 
 # 前缀路径（Grok 异步任务轮询、Google 原生 generateContent）

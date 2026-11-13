@@ -1,3 +1,4 @@
+import { shouldReturnBase64 } from '../lib/apiProfiles'
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { readText } from '@tauri-apps/plugin-clipboard-manager'
@@ -246,12 +247,12 @@ export default function SettingsModal() {
   const activePresetDescription = getPresetProfileDescription(activeProfile.id)
   const activeProfileLocked = isPresetProfileLocked(activeProfile.id)
   const activeProviderIsOpenAICompatible = isOpenAICompatibleProvider(draft, activeProfile.provider)
-  const nativeImageProvider = activeProfile.provider === 'google' || activeProfile.provider === 'xai' ? NATIVE_IMAGE_PROVIDERS[activeProfile.provider] : null
+  const nativeImageProvider = activeProfile.provider === 'google' || activeProfile.provider === 'xai' || activeProfile.provider === 'bytedance' ? NATIVE_IMAGE_PROVIDERS[activeProfile.provider] : null
   const activeProviderUsesApiUrl = activeProviderIsOpenAICompatible || activeProfile.provider === 'fal' || Boolean(nativeImageProvider)
   const activeCustomProvider = getCustomProviderDefinition(draft, activeProfile.provider)
   const resolvedActiveProfile = resolveApiProfileModel(activeProfile, undefined, activeCustomProvider)
   const activeImageFamily = getImageModelFamily(resolvedActiveProfile)
-  const activeCustomProviderSupportsNativeTransparentBackground = !activeImageFamily && (!activeCustomProvider || customProviderSupportsNativeTransparentBackground(activeCustomProvider, resolvedActiveProfile.model))
+  const activeCustomProviderSupportsNativeTransparentBackground = (!activeImageFamily || activeImageFamily === 'seedream') && (!activeCustomProvider || customProviderSupportsNativeTransparentBackground(activeCustomProvider, resolvedActiveProfile.model))
   const activeProfileApiProxyEligible = isProfileApiProxyEligible(draft, activeProfile)
   const activeCustomProviderAsync = isAsyncCustomProvider(activeCustomProvider)
   const isResponsesProfile = activeProfile.provider === 'openai' && (activeProfile.apiMode ?? DEFAULT_SETTINGS.apiMode) === 'responses'
@@ -262,13 +263,14 @@ export default function SettingsModal() {
     : splitModelList(activeProfile.model).some(isGptImage26PlusModel))
   const apiProxyChecked = activeProfileApiProxyEligible && (apiProxyLocked || activeProfile.apiProxy)
   const apiProxyEnabled = apiProxyAvailable && activeProfileApiProxyEligible && apiProxyChecked
-  const defaultProviderOrder = ['openai', 'google', 'xai', ...draft.customProviders.map(p => p.id)]
+  const defaultProviderOrder = ['openai', 'google', 'xai', 'bytedance', ...draft.customProviders.map(p => p.id)]
   const providerOrder = draft.providerOrder || defaultProviderOrder
 
   const unorderedProviderOptions = [
     { label: 'OpenAI 兼容接口', value: 'openai', draggable: true },
     { label: 'Google', value: 'google', draggable: true },
     { label: 'xAI', value: 'xai', draggable: true },
+    { label: '字节跳动', value: 'bytedance', draggable: true },
     ...draft.customProviders.map((provider) => {
       const actions = [
         ...(!presetConfigOnly && !isPresetProviderLocked(provider.id) ? [{ label: '编辑', onClick: () => openEditCustomProvider(provider) }] : []),
@@ -849,7 +851,7 @@ export default function SettingsModal() {
   }
 
   const handleProviderReorder = (sourceValue: string | number, targetValue: string | number, position: 'before' | 'after' | null) => {
-    const currentOrder = draft.providerOrder || ['openai', 'google', 'xai', ...draft.customProviders.map(p => p.id)]
+    const currentOrder = draft.providerOrder || ['openai', 'google', 'xai', 'bytedance', ...draft.customProviders.map(p => p.id)]
     const sourceIndex = currentOrder.indexOf(String(sourceValue))
     const targetIndex = currentOrder.indexOf(String(targetValue))
     if (sourceIndex < 0 || targetIndex < 0) return
@@ -1317,7 +1319,7 @@ export default function SettingsModal() {
                   className="w-full rounded-xl border border-transparent bg-black/[0.04] px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:bg-white/[0.06] dark:text-gray-200 dark:focus:border-blue-500/50"
                 />
                 <div data-selectable-text className="mt-1.5 text-xs leading-6 text-gray-500 dark:text-gray-500">
-                  选择 API 服务的供应商；模型清单和接口地址随供应商切换。Google 与 xAI 为原生接口，其余走 OpenAI 兼容协议。
+                  选择 API 服务的供应商；模型清单和接口地址随供应商切换。Google、xAI 与字节跳动为原生接口，其余走 OpenAI 兼容协议。
                 </div>
               </div>
 
@@ -1427,7 +1429,7 @@ export default function SettingsModal() {
                       </button>
                     </div>
                     <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
-                      开启后请求以流式传输，并非所有服务商和网关都支持此功能。官方接口在流式模式下不发送心跳，需要配合请求中间步骤图像来维持连接，避免超时断开。官方接口仅支持单图流式传输，因此数量大于 1 时会将多图生成拆分为并发单图。
+                      开启后请求以流式传输，xAI、字节跳动官方域名默认开启，手动设置后不随地址变化。并非所有服务商和网关都支持此功能。官方接口在流式模式下不发送心跳，需要配合请求中间步骤图像来维持连接，避免超时断开。官方接口仅支持单图流式传输，因此数量大于 1 时会将多图生成拆分为并发单图。
                     </div>
                   </div>
                   <div className={`block ${activeProfile.streamImages ? '' : 'opacity-60'}`}>
@@ -1480,24 +1482,24 @@ export default function SettingsModal() {
               </div>
 
               {/* 10. 返回 Base64 图片数据 */}
-              {(activeProviderIsOpenAICompatible || activeProfile.provider === 'xai') && (
+              {(activeProviderIsOpenAICompatible || activeProfile.provider === 'xai' || activeProfile.provider === 'bytedance') && (
                 <div className="block">
                   <div className="mb-1.5 flex items-center justify-between">
                     <span className="block text-sm text-gray-600 dark:text-gray-300">返回 Base64 图片数据</span>
                     <button
                       type="button"
-                      onClick={() => updateActiveProfile({ responseFormatB64Json: !activeProfile.responseFormatB64Json, responseFormatUrl: false }, true)}
+                      onClick={() => updateActiveProfile({ responseFormatB64Json: !shouldReturnBase64(activeProfile), responseFormatUrl: false }, true)}
                       disabled={activeProfileLocked}
-                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${activeProfile.responseFormatB64Json ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${shouldReturnBase64(activeProfile) ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
                       role="switch"
-                      aria-checked={!!activeProfile.responseFormatB64Json}
+                      aria-checked={shouldReturnBase64(activeProfile)}
                       aria-label="返回 Base64 图片数据"
                     >
-                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${activeProfile.responseFormatB64Json ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
+                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${shouldReturnBase64(activeProfile) ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
                     </button>
                   </div>
                   <div data-selectable-text className="text-xs leading-6 text-gray-500 dark:text-gray-500">
-                    开启后在请求体中追加 <code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">response_format: b64_json</code>，使接口直接返回 Base64 编码的图片数据而非 URL。并非所有服务商和网关都支持此功能。
+                    开启后在请求体中追加 <code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">response_format: b64_json</code>，使接口直接返回 Base64 编码的图片数据而非 URL。xAI、字节跳动官方域名默认开启，手动设置后不随地址变化。并非所有服务商和网关都支持此功能。
                   </div>
                 </div>
               )}

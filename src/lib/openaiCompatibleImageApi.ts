@@ -1,3 +1,4 @@
+import { shouldReturnBase64 } from './apiProfiles'
 import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefinition, type CustomProviderPollMapping, type CustomProviderResultMapping, type CustomProviderSubmitMapping, type ImageApiResponse, type ImageResponseItem, type ResponsesApiResponse, type ResponsesOutputItem, type TaskParams } from '../types'
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
 import { buildApiUrl, isApiProxyLocked, readClientDevProxyConfig, shouldUseApiProxy } from './devProxy'
@@ -27,7 +28,7 @@ import {
   PROMPT_REWRITE_GUARD_PREFIX,
 } from './imageApiShared'
 import { getImageGenerationModel, getImageModelFamily, isVectorOrAnimatedFormat, usesGrokSizeParams } from './imageModels'
-import { getImageModelParams } from './imageModelParams'
+import { getImageModelParams, getSeedreamSize } from './imageModelParams'
 import { OPENAI_IMAGE_TASK_PROVIDER, resolveCustomProviderModel } from './imageProviderMappings'
 import { apiFetch, FetchConnectError } from './platform'
 import { isEventStreamResponse, readJsonServerSentEvents } from './serverSentEvents'
@@ -130,16 +131,21 @@ export function createWorkerProxyHeaders(targetBaseUrl: string, apiKey: string):
   return { 'X-Target-Config': encodeWorkerProxyConfig({ baseUrl: targetBaseUrl, apiKey }) }
 }
 
-/** 网页版部署在没有本地代理的环境时，OpenAI Images 与 Grok/Gemini 兼容接口统一经云函数转发，规避中转站的 CORS 限制 */
+/** 网页版部署在没有本地代理的环境时，OpenAI Images 与 Grok/Gemini/Seedream 兼容接口统一经云函数转发，规避中转站的 CORS 限制 */
 function usesImageApiWorkerProxy(profile: ApiProfile, useApiProxy: boolean): boolean {
   // 部署端本地代理（/api-proxy）优先；锁定代理时必须走本地代理，不落到云函数
   if (useApiProxy || isApiProxyLocked()) return false
   return profile.provider === 'openai' && profile.apiMode === 'images' ? true : Boolean(getImageModelFamily(profile))
 }
 
+/** 云函数转发路径中上游 API 的版本段：bytedance（Ark）为 api/v3，其余为 v1 */
+function getWorkerProxyPathPrefix(profile: ApiProfile): string {
+  return profile.provider === 'bytedance' ? 'api/v3' : 'v1'
+}
+
 function createRequestHeaders(profile: ApiProfile, useWorkerProxy = false): Record<string, string> {
   if (useWorkerProxy) {
-    return createWorkerProxyHeaders(getProxyUpstreamBaseUrl(profile.baseUrl), profile.apiKey)
+    return createWorkerProxyHeaders(getProxyUpstreamBaseUrl(profile.baseUrl, getWorkerProxyPathPrefix(profile)), profile.apiKey)
   }
 
   return {
@@ -489,7 +495,8 @@ export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile
   const family = getImageModelFamily(profile)
   if (family) {
     if (opts.maskDataUrl) throw new Error('此模型不支持遮罩编辑，请使用参考图和提示词描述修改内容')
-    opts = { ...opts, nativeTransparentBackground: false }
+    if (family !== 'seedream') opts = { ...opts, nativeTransparentBackground: false }
+    if (family === 'seedream' && opts.inputImageDataUrls.length > 10) throw new Error('Seedream 5.5 每次最多接受 10 张参考图')
   }
   if (customProvider) {
     customProvider = resolveCustomProviderModel(customProvider, profile.model)
@@ -518,7 +525,14 @@ async function callModelImagesApi(opts: CallApiOptions, profile: ApiProfile): Pr
   const isEdit = opts.inputImageDataUrls.length > 0
   const grokSizeParams = usesGrokSizeParams(profile)
   const body: Record<string, unknown> = { model: profile.model, prompt: opts.prompt, n: opts.params.n > 0 ? opts.params.n : 1 }
-  if (family === 'gemini') {
+  if (family === 'seedream') {
+    delete body.n
+    body.watermark = opts.params.watermark ?? false
+    body.size = getSeedreamSize(profile, opts.params)
+    body.background = opts.params.background === 'transparent' && profile.transparentBackgroundMethod === 'local' ? 'opaque' : opts.params.background ?? 'auto'
+    body.output_format = opts.params.output_format === 'jpeg' && body.background !== 'transparent' ? 'jpeg' : 'png'
+    if (isEdit) body.image = opts.inputImageDataUrls
+  } else if (family === 'gemini') {
     body.size = params.aspect_ratio
     body.resolution = params.resolution
     if (isEdit) body.image_urls = opts.inputImageDataUrls
@@ -539,16 +553,18 @@ async function callModelImagesApi(opts: CallApiOptions, profile: ApiProfile): Pr
     if (images.length > 1) body.images = images
     if (profile.provider === 'xai' && images.length > 5) throw new Error('xAI 每次最多接受 5 张参考图')
   }
-  if (profile.responseFormatB64Json) body.response_format = 'b64_json'
+  if (shouldReturnBase64(profile)) body.response_format = 'b64_json'
   assertImageInputPayloadSize(opts.inputImageDataUrls.reduce((sum, url) => sum + url.length, 0))
   const proxyConfig = readClientDevProxyConfig()
   const useApiProxy = shouldUseApiProxy(profile.apiProxy, proxyConfig)
   const useWorkerProxy = usesImageApiWorkerProxy(profile, useApiProxy)
   const requestPath = family === 'grok' && !grokSizeParams && isEdit ? 'images/edits' : 'images/generations'
+  const apiVersion = profile.provider === 'bytedance' ? 'v3' : 'v1'
+  const proxyPathPrefix = profile.provider === 'bytedance' ? 'api/v3' : 'v1'
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(createRequestTimeoutError(profile.timeout)), profile.timeout * 1000)
   try {
-    const response = await apiFetch(useWorkerProxy ? `${IMAGE_API_PROXY_URL}/v1/${requestPath}` : buildApiUrl(profile.baseUrl, requestPath, proxyConfig, useApiProxy), {
+    const response = await apiFetch(useWorkerProxy ? `${IMAGE_API_PROXY_URL}/${proxyPathPrefix}/${requestPath}` : buildApiUrl(profile.baseUrl, requestPath, proxyConfig, useApiProxy, apiVersion), {
       method: 'POST',
       headers: { ...createRequestHeaders(profile, useWorkerProxy), 'Content-Type': 'application/json' },
       cache: 'no-store',
@@ -563,7 +579,7 @@ async function callModelImagesApi(opts: CallApiOptions, profile: ApiProfile): Pr
       clearTimeout(timeoutId)
       return await pollCustomTaskResult(profile, OPENAI_IMAGE_TASK_PROVIDER.poll!, taskId, family === 'grok' ? 'image/jpeg' : 'image/png', controller.signal, useWorkerProxy)
     }
-    return await parseImagesApiResponse(payload, family === 'grok' ? 'image/jpeg' : 'image/png', controller.signal)
+    return await parseImagesApiResponse(payload, family === 'grok' || body.output_format === 'jpeg' ? 'image/jpeg' : 'image/png', controller.signal)
   } catch (err) {
     console.warn('图像请求失败', err)
     throw err
@@ -654,7 +670,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile): P
       if (params.n > 1) {
         formData.append('n', String(params.n))
       }
-      if (profile.responseFormatB64Json) {
+      if (shouldReturnBase64(profile)) {
         formData.append('response_format', 'b64_json')
       } else if (profile.responseFormatUrl) {
         formData.append('response_format', 'url')
@@ -736,7 +752,7 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile): P
       if (params.n > 1) {
         body.n = params.n
       }
-      if (profile.responseFormatB64Json) {
+      if (shouldReturnBase64(profile)) {
         body.response_format = 'b64_json'
       } else if (profile.responseFormatUrl) {
         body.response_format = 'url'
@@ -845,6 +861,8 @@ function createCustomProviderContext(opts: CallApiOptions, profile: ApiProfile) 
   applyGptImage26Params(gptImage26Params, opts.params, profile)
   const params = {
     ...opts.params,
+    background: undefined,
+    watermark: undefined,
     complexity: undefined,
     frame_count: undefined,
     frame_duration_ms: undefined,
@@ -853,13 +871,22 @@ function createCustomProviderContext(opts: CallApiOptions, profile: ApiProfile) 
     ...(opts.nativeTransparentBackground ? { background: 'transparent' } : {}),
   }
   const modelParams = getImageModelFamily(profile) ? getImageModelParams(profile, opts.params) : null
+  const seedreamParams = getImageModelFamily(profile) === 'seedream' ? {
+    watermark: opts.params.watermark ?? false,
+    background: opts.params.background === 'transparent' && profile.transparentBackgroundMethod === 'local' ? 'opaque' : opts.params.background ?? 'auto',
+    aspect_ratio: modelParams?.aspect_ratio === 'custom' ? undefined : modelParams?.aspect_ratio,
+    size: getSeedreamSize(profile, opts.params),
+    output_format: opts.params.output_format === 'jpeg' && opts.params.background !== 'transparent' ? 'jpeg' : 'png',
+    quality: undefined, moderation: undefined, output_compression: undefined, n: undefined,
+    google_search: undefined, image_search: undefined, thinking_level: undefined,
+  } : null
 
   const inputImageUrls = opts.inputImageUrls?.filter(isHttpUrl) ?? []
 
   return {
     profile,
     prompt,
-    params: { ...params, ...(modelParams ? { ...modelParams, size: modelParams.aspect_ratio } : {}) },
+    params: { ...params, ...(modelParams ? { ...modelParams, size: modelParams.aspect_ratio } : {}), ...seedreamParams },
     mode: opts.inputImageDataUrls.length ? 'image-to-image' : 'text-to-image',
     resolution: modelParams?.resolution ? { upper: modelParams.resolution, lower: modelParams.resolution.toLowerCase() } : undefined,
     inputImages: {
@@ -981,7 +1008,7 @@ async function submitCustomRequest(mapping: CustomProviderSubmitMapping, opts: C
   if (method !== 'GET') {
     if (contentType === 'multipart') {
       const formData = await createCustomMultipartBody(mapping, opts, context)
-      if (profile.responseFormatB64Json) {
+      if (shouldReturnBase64(profile)) {
         formData.append('response_format', 'b64_json')
       } else if (profile.responseFormatUrl) {
         formData.append('response_format', 'url')
@@ -994,8 +1021,8 @@ async function submitCustomRequest(mapping: CustomProviderSubmitMapping, opts: C
       )
       headers['Content-Type'] = 'application/json'
       const resolved = resolveTemplateValue(mapping.body ?? {}, context)
-      if ((profile.responseFormatB64Json || profile.responseFormatUrl) && resolved && typeof resolved === 'object' && !Array.isArray(resolved)) {
-        (resolved as Record<string, unknown>).response_format = profile.responseFormatB64Json ? 'b64_json' : 'url'
+      if ((shouldReturnBase64(profile) || profile.responseFormatUrl) && resolved && typeof resolved === 'object' && !Array.isArray(resolved)) {
+        (resolved as Record<string, unknown>).response_format = shouldReturnBase64(profile) ? 'b64_json' : 'url'
       }
       body = JSON.stringify(resolved)
     }
@@ -1042,7 +1069,7 @@ async function pollCustomTaskResult(
     const taskPath = appendQuery(buildTaskPath(poll.path.replace(/\{model\}/g, encodeURIComponent(profile.model)), taskId), query)
     let taskPayload: unknown
     try {
-      const taskResponse = await apiFetch(useWorkerProxy ? `${IMAGE_API_PROXY_URL}/v1/${taskPath}` : buildApiUrl(profile.baseUrl, taskPath, proxyConfig, useApiProxy), {
+      const taskResponse = await apiFetch(useWorkerProxy ? `${IMAGE_API_PROXY_URL}/${getWorkerProxyPathPrefix(profile)}/${taskPath}` : buildApiUrl(profile.baseUrl, taskPath, proxyConfig, useApiProxy, getWorkerProxyPathPrefix(profile)), {
         method: poll.method ?? 'GET',
         headers: requestHeaders,
         cache: 'no-store',

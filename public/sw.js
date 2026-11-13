@@ -1,4 +1,6 @@
-const CACHE_NAME = 'gpt-image-playground-v0.9.0-fork'
+
+const CACHE_NAME = 'gpt-image-playground-v0.9.1-fork'
+
 const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './pwa-icon.svg', './pwa-maskable-icon.svg', './color-mode.js']
 const APP_SHELL_URLS = new Set(APP_SHELL.map((path) => new URL(path, self.registration.scope).href))
 const ASSETS_PATH = new URL('./assets/', self.registration.scope).pathname
