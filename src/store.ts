@@ -22,7 +22,7 @@ import { DEFAULT_PARAMS } from './types'
 import { DEFAULT_SETTINGS, createSettingsForApiProfile, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, mergePresetImportedSettings, normalizeSettings, resolveApiProfileModel, splitModelList, validateApiProfile } from './lib/apiProfiles'
 import { enforcePresetConfigPolicy, getPresetConfig, getPresetProfileIds, getPresetProviderIds, isPresetConfigDeletionPrevented, isPresetConfigOnlyEnabled, isPresetConfigParamsLocked, isPresetProfile, isPresetProviderDeletionPrevented } from './lib/presetConfig'
 import { dismissAllTooltips } from './lib/tooltipDismiss'
-import { getTaskPromptText, remapImageMentionsForOrder, replaceImageMentionsForApi, stripImageMentionMarkers } from './lib/promptImageMentions'
+import { getPromptDisplayText, remapImageMentionsForOrder, replaceImageMentionsForApi, stripImageMentionMarkers } from './lib/promptImageMentions'
 import {
   getAllTasks,
   getLegacyProtectedImageIds,
@@ -1010,7 +1010,8 @@ export function taskMatchesFilterStatus(task: TaskRecord, filterStatus: AppState
 export function taskMatchesSearchQuery(task: TaskRecord, query: string) {
   const q = query.trim().toLowerCase()
   if (!q) return true
-  const prompt = getTaskPromptText(task.prompt || '', task.inputImageIds.length).toLowerCase()
+  // 搜索与展示一致：按所见即所得文本匹配（@图N），而不是请求原文的 [image N]
+  const prompt = getPromptDisplayText(task.prompt || '').toLowerCase()
   const paramStr = JSON.stringify(task.params).toLowerCase()
   const errorStr = [task.error, ...(task.outputErrors ?? []).map((item) => item.error)].filter(Boolean).join('\n').toLowerCase()
   return prompt.includes(q) || paramStr.includes(q) || errorStr.includes(q)

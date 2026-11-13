@@ -10,7 +10,8 @@ import { copyImageSourceToClipboard, copyTextToClipboard, getClipboardFailureMes
 import { createMaskPreviewDataUrl } from '../lib/canvasImage'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import { downloadImageEntriesAsZip, downloadImageIds, getDownloadErrorMessage, getImageZipEntries, withSaveLocation } from '../lib/downloadImages'
-import { getImageComments, getTaskPromptText, replaceImageMentionsForApi } from '../lib/promptImageMentions'
+import { getImageComments, getPromptDisplayText, replaceImageMentionsForApi } from '../lib/promptImageMentions'
+import TaskPromptMentions from './TaskPromptMentions'
 import { getApiProviderLabel } from '../lib/apiProfiles'
 import { getImageModelFamily, supportsGrokQuality } from '../lib/imageModels'
 import { isTauri } from '../lib/platform'
@@ -260,7 +261,8 @@ export default function DetailModal() {
     : task.prompt
   const originalPrompt = replaceImageMentionsForApi(requestPrompt, task.inputImageIds.length).trim()
   const promptSentToApi = [task.promptHints?.prefix, originalPrompt, task.promptHints?.suffix].filter(Boolean).join('\n').trim()
-  const displayedPrompt = [task.promptHints?.prefix, getTaskPromptText(task.prompt, task.inputImageIds.length), task.promptHints?.suffix].filter(Boolean).join('\n')
+  // 展示用提示词：复制走所见即所得纯文本（保留 @图N、评论展开），渲染交给胶囊组件
+  const displayedPrompt = [task.promptHints?.prefix, getPromptDisplayText(task.prompt), task.promptHints?.suffix].filter(Boolean).join('\n')
   const showRevisedPrompt = Boolean(currentRevisedPrompt && currentRevisedPrompt !== originalPrompt && currentRevisedPrompt !== promptSentToApi)
   const codexCliPromptKey = getCodexCliPromptKey(settings)
   const hasHandledPromptWarning = settings.codexCli || dismissedCodexCliPrompts.includes(codexCliPromptKey)
@@ -359,8 +361,10 @@ export default function DetailModal() {
     const src = imgId ? imageSrcs[imgId] : ''
     if (!src) return
     try {
-      await copyImageSourceToClipboard(src)
-      showToast('参考图已复制', 'success')
+      const downgradedFromGif = await copyImageSourceToClipboard(src)
+      showToast(downgradedFromGif
+        ? '已复制首帧：浏览器剪贴板不支持 GIF 动画，请用下载保存动图'
+        : '参考图已复制', 'success')
     } catch (err) {
       console.error(err)
       showToast(getClipboardFailureMessage('复制参考图失败', err), 'error')
@@ -900,7 +904,14 @@ export default function DetailModal() {
               </div>
             ) : (
               <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap mb-4">
-                {displayedPrompt || '(无提示词)'}
+                {task.prompt.trim()
+                  ? <TaskPromptMentions
+                      prompt={displayedPrompt}
+                      inputImageIds={allInputImageIds}
+                      knownSources={imageSrcs}
+                      onImageClick={(imageId) => setLightboxImageId(imageId, allInputImageIds, task.prompt, inputMarkupIds)}
+                    />
+                  : (displayedPrompt || '(无提示词)')}
               </p>
             )}
             {showRevisedPrompt && currentRevisedPrompt && (

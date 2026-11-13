@@ -92,8 +92,10 @@ export default function ImageContextMenu() {
     e.stopPropagation()
     setMenuInfo(null)
     try {
-      await copyImageSourceToClipboard(getOriginalImageSrc())
-      showToast('图片已复制', 'success')
+      const downgradedFromGif = await copyImageSourceToClipboard(getOriginalImageSrc())
+      showToast(downgradedFromGif
+        ? '已复制首帧：浏览器剪贴板不支持 GIF 动画，请用下载保存动图'
+        : '图片已复制', 'success')
     } catch (err) {
       console.error(err)
       showToast(getClipboardFailureMessage('复制失败', err), 'error')
