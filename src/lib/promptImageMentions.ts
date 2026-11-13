@@ -258,3 +258,8 @@ export function expandImageCommentMentions(prompt: string) {
 export function getTaskPromptText(prompt: string, imageCount: number) {
   return stripImageMentionMarkers(replaceImageMentionsForApi(prompt, imageCount))
 }
+
+/** 任务提示词的所见即所得纯文本：保留 @图N 标记、评论胶囊展开，用于复制和搜索 */
+export function getPromptDisplayText(prompt: string) {
+  return stripImageMentionMarkers(expandImageCommentMentions(prompt))
+}

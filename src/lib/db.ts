@@ -6,7 +6,10 @@ import { dbTransaction, STORE_AGENT_CONVERSATIONS } from './idb'
 
 const THUMBNAIL_MAX_SIZE = 720
 const THUMBNAIL_QUALITY = 0.9
-const THUMBNAIL_VERSION = 2
+// v3：GIF 不再压成静态首帧，直接存原图保持动画（超上限的仍退回首帧）
+const THUMBNAIL_VERSION = 3
+// GIF 原图当缩略图存储的字节上限，超过则退回静态首帧，避免超大动图拖垮列表
+const ANIMATED_THUMBNAIL_MAX_BYTES = 10 * 1024 * 1024
 
 export const CURRENT_THUMBNAIL_VERSION = THUMBNAIL_VERSION
 
@@ -223,11 +226,28 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
   })
 }
 
+/** 按 base64 段长度估算 dataUrl 的解码字节数 */
+function estimateDataUrlBytes(dataUrl: string) {
+  const commaIndex = dataUrl.indexOf(',')
+  const base64 = commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : ''
+  return Math.floor(base64.length * 3 / 4)
+}
+
 async function createImageThumbnail(dataUrl: string): Promise<Omit<StoredImageThumbnail, 'id'>> {
   const image = await loadImage(dataUrl)
   const width = image.naturalWidth
   const height = image.naturalHeight
   if (width <= 0 || height <= 0) throw new Error('图片尺寸无效')
+
+  // canvas 只能取首帧：GIF 直接存原图当缩略图，保住动画（超过字节上限的仍压成静态图）
+  if (/^data:image\/gif[;,]/i.test(dataUrl) && estimateDataUrlBytes(dataUrl) <= ANIMATED_THUMBNAIL_MAX_BYTES) {
+    return {
+      thumbnailDataUrl: dataUrl,
+      width,
+      height,
+      thumbnailVersion: THUMBNAIL_VERSION,
+    }
+  }
 
   const scale = Math.min(1, THUMBNAIL_MAX_SIZE / Math.max(width, height))
   const canvas = document.createElement('canvas')

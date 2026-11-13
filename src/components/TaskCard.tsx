@@ -6,7 +6,7 @@ import { useNearViewport } from '../hooks/useNearViewport'
 import { formatImageRatio } from '../lib/size'
 import { getParamDisplay, ActualValueBadge } from '../lib/paramDisplay'
 import { DEFAULT_FAL_MODEL, DEFAULT_IMAGES_MODEL } from '../lib/apiProfiles'
-import { getTaskPromptText } from '../lib/promptImageMentions'
+import TaskPromptMentions from './TaskPromptMentions'
 import { CodeIcon, TransparentBgIcon } from './icons'
 import ViewportTooltip from './ViewportTooltip'
 
@@ -552,7 +552,9 @@ export default function TaskCard({
               </div>
             ) : (
               <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-3">
-                {getTaskPromptText(task.prompt, task.inputImageIds.length) || '(无提示词)'}
+                {task.prompt.trim()
+                  ? <TaskPromptMentions prompt={task.prompt} inputImageIds={task.inputImageIds} />
+                  : '(无提示词)'}
               </p>
             )}
           </div>

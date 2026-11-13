@@ -21,7 +21,8 @@ export async function copyTextToClipboard(text: string) {
   throw asyncClipboardError ?? new Error('Clipboard API is not available')
 }
 
-export async function copyImageSourceToClipboard(src: string | Promise<string | undefined>) {
+/** 复制图片到剪贴板。GIF 动画无法写入剪贴板（浏览器只支持 image/png），会降级为首帧并返回 true */
+export async function copyImageSourceToClipboard(src: string | Promise<string | undefined>): Promise<boolean> {
   if (!canCopyImageToClipboard()) {
     throw new Error('Clipboard image API is not available')
   }
@@ -29,6 +30,7 @@ export async function copyImageSourceToClipboard(src: string | Promise<string | 
     throw new Error('当前浏览器不支持图像剪贴板写入')
   }
 
+  let downgradedFromGif = false
   // write() 之前不能有 await：Chromium 在调用 write() 时检查用户激活，取图耗时过长会弹出剪贴板权限框并挂起，
   // 所以把取图和转码放进 ClipboardItem 的 Promise（Safari 也要求这种写法）。
   // 不写 web image/* 自定义格式：它需要事先知道 MIME，而且客户端写入时会弹出 WebView2 的剪贴板权限框
@@ -39,13 +41,16 @@ export async function copyImageSourceToClipboard(src: string | Promise<string | 
     const res = await apiFetch(resolvedSrc)
     const blob = await res.blob()
     if (!blob.type.startsWith('image/')) throw new Error('Clipboard item is not an image')
-    return blob.type === 'image/png' ? blob : await imageBlobToPngBlob(blob)
+    if (blob.type === 'image/png') return blob
+    downgradedFromGif = blob.type === 'image/gif'
+    return await imageBlobToPngBlob(blob)
   })()
   // write() 先因权限等原因失败时，png 的失败没人接收，避免多出一条 unhandledrejection；错误仍由 write() 抛给调用方
   png.catch(() => {})
   await navigator.clipboard.write([
     new ClipboardItem({ 'image/png': png }),
   ])
+  return downgradedFromGif
 }
 
 export function canCopyImageToClipboard() {

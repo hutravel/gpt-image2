@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { InputImage } from '../types'
-import { expandImageCommentMentions, getAtImageQuery, getImageCommentMention, getImageComments, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getTaskPromptText, getSelectedTextMentionLabel, insertImageMention, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, replaceImageMentionsForApi, stripImageMentionMarkers, upsertImageCommentMention } from './promptImageMentions'
+import { expandImageCommentMentions, getAtImageQuery, getImageCommentMention, getImageComments, getPromptDisplayText, getPromptIndexFromVisibleIndex, getPromptMentionParts, getSelectedImageMentionLabel, getTaskPromptText, getSelectedTextMentionLabel, insertImageMention, insertTextMentionAtVisibleRange, isCursorInSelectedImageMention, remapImageMentionsForOrder, replaceImageMentionsForApi, stripImageMentionMarkers, upsertImageCommentMention } from './promptImageMentions'
 
 const images: InputImage[] = [
   { id: 'image-a', dataUrl: 'data:image/png;base64,a' },
@@ -196,6 +196,14 @@ describe('prompt image mentions', () => {
       expect(getTaskPromptText(prompt, 1)).toBe('参考 [image 1]\n\n[image 1] notes:\n1. (X=10%, Y=80%) 删除')
       // 原本就空了一行时不再重复补空行
       expect(getTaskPromptText(`前\n\n${getImageCommentMention(0, [comments[1]])}\n\n后`, 1)).toBe('前\n\n[image 1] notes:\n1. (X=10%, Y=80%) 删除\n\n后')
+    })
+
+    it('shows the user-visible text for copying and searching', () => {
+      const prompt = `参考 ${getSelectedImageMentionLabel(0)} ${getImageCommentMention(0, [comments[1]])}`
+      expect(getPromptDisplayText(prompt)).toBe('参考 @图1\n\n@图1 notes:\n1. (X=10%, Y=80%) 删除')
+      expect(getPromptDisplayText(`生成一只跑动的${getSelectedImageMentionLabel(0)}`)).toBe('生成一只跑动的@图1')
+      // 无提及时原样返回
+      expect(getPromptDisplayText('普通提示词')).toBe('普通提示词')
     })
   })
 })
