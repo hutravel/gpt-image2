@@ -108,12 +108,12 @@ describe('prompt image mentions', () => {
   })
 
   describe('replaceImageMentionsForApi', () => {
-    it('replaces single mention', () => {
-      expect(replaceImageMentionsForApi(`把 ${getSelectedImageMentionLabel(0)} 变蓝`)).toBe('把 [image 1] 变蓝')
+    it('replaces single mention without the @ symbol', () => {
+      expect(replaceImageMentionsForApi(`把 ${getSelectedImageMentionLabel(0)} 变蓝`)).toBe('把 图1 变蓝')
     })
 
     it('replaces multiple mentions', () => {
-      expect(replaceImageMentionsForApi(`把 ${getSelectedImageMentionLabel(1)} 的背景换到 ${getSelectedImageMentionLabel(0)} 上`)).toBe('把 [image 2] 的背景换到 [image 1] 上')
+      expect(replaceImageMentionsForApi(`把 ${getSelectedImageMentionLabel(1)} 的背景换到 ${getSelectedImageMentionLabel(0)} 上`)).toBe('把 图2 的背景换到 图1 上')
     })
 
     it('does not replace manually typed mentions', () => {
@@ -188,14 +188,14 @@ describe('prompt image mentions', () => {
         '',
         '整体偏暖色调',
       ].join('\n'))
-      expect(replaceImageMentionsForApi(expandImageCommentMentions(getImageCommentMention(0, comments)), 1)).toContain('[image 1] notes:')
+      expect(replaceImageMentionsForApi(expandImageCommentMentions(getImageCommentMention(0, comments)), 1)).toContain('图1 notes:')
     })
 
     it('shows the exact request text for task records', () => {
       const prompt = `参考 ${getSelectedImageMentionLabel(0)} ${getImageCommentMention(0, [comments[1]])}`
-      expect(getTaskPromptText(prompt, 1)).toBe('参考 [image 1]\n\n[image 1] notes:\n1. (X=10%, Y=80%) 删除')
+      expect(getTaskPromptText(prompt, 1)).toBe('参考 图1\n\n图1 notes:\n1. (X=10%, Y=80%) 删除')
       // 原本就空了一行时不再重复补空行
-      expect(getTaskPromptText(`前\n\n${getImageCommentMention(0, [comments[1]])}\n\n后`, 1)).toBe('前\n\n[image 1] notes:\n1. (X=10%, Y=80%) 删除\n\n后')
+      expect(getTaskPromptText(`前\n\n${getImageCommentMention(0, [comments[1]])}\n\n后`, 1)).toBe('前\n\n图1 notes:\n1. (X=10%, Y=80%) 删除\n\n后')
     })
 
     it('shows the user-visible text for copying and searching', () => {

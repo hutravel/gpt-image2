@@ -161,7 +161,8 @@ export function replaceImageMentionsForApi(prompt: string, imageCount?: number, 
   return expandImageCommentMentions(prompt).replace(SELECTED_IMAGE_MENTION_RE, (text, n) => {
     const index = Number(n) - 1
     if (imageCount != null && (index < 0 || index >= imageCount)) return stripImageMentionMarkers(text)
-    return formatImage ? formatImage(index) : `[image ${n}]`
+    // 发给接口的提示词不带 @：@ 是输入框里的提及符号
+    return formatImage ? formatImage(index) : `图${n}`
   })
 }
 
@@ -254,7 +255,7 @@ export function expandImageCommentMentions(prompt: string) {
   return result
 }
 
-/** 任务卡片、详情等直接展示实际发送给接口的提示词原文：图片提及换成 [image N]，评论胶囊展开 */
+/** 任务卡片、详情等直接展示实际发送给接口的提示词原文：图片提及换成 图N（无 @），评论胶囊展开 */
 export function getTaskPromptText(prompt: string, imageCount: number) {
   return stripImageMentionMarkers(replaceImageMentionsForApi(prompt, imageCount))
 }

@@ -906,8 +906,10 @@ export default function DetailModal() {
               <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap mb-4">
                 {task.prompt.trim()
                   ? <TaskPromptMentions
-                      prompt={displayedPrompt}
+                      prompt={task.prompt}
                       inputImageIds={allInputImageIds}
+                      prefix={task.promptHints?.prefix}
+                      suffix={task.promptHints?.suffix}
                       knownSources={imageSrcs}
                       onImageClick={(imageId) => setLightboxImageId(imageId, allInputImageIds, task.prompt, inputMarkupIds)}
                     />

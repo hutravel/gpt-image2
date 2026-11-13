@@ -38,7 +38,10 @@ describe('任务详情参数', () => {
     renderTask({ promptHints: { prefix: '生成图像：', suffix: '请使用 google:search 搜索相关信息。' } })
     const html = renderToStaticMarkup(<DetailModal />)
     expect(html).not.toContain('附加提示词')
-    expect(html).toContain('生成图像：\nexample\n请使用 google:search 搜索相关信息。')
+    // 胶囊渲染后附加文本与正文以独立节点拼接，换行以注释形式存在于标记之间
+    expect(html).toContain('生成图像：')
+    expect(html).toContain('example')
+    expect(html).toContain('请使用 google:search 搜索相关信息。')
     renderTask({})
     expect(renderToStaticMarkup(<DetailModal />)).not.toContain('生成图像：')
   })
