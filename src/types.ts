@@ -41,6 +41,7 @@ export interface CustomProviderSubmitMapping {
   contentType?: CustomProviderContentType
   query?: Record<string, string>
   body?: Record<string, unknown>
+  omitValues?: Record<string, Array<string | number | boolean>>
   files?: CustomProviderFileMapping[]
   taskIdPath?: string
   result?: CustomProviderResultMapping
@@ -58,16 +59,24 @@ export interface CustomProviderPollMapping {
   result: CustomProviderResultMapping
 }
 
+export type CustomProviderImageSize = { mode: 'pixels' } | {
+  mode: 'aspect-ratio'
+  ratios: string[]
+  resolutions: string[]
+}
+
 export interface CustomProviderDefinition {
   id: string
   name: string
   template?: CustomProviderTemplate
+  imageSize?: CustomProviderImageSize
   submit: CustomProviderSubmitMapping
   editSubmit?: CustomProviderSubmitMapping
   poll?: CustomProviderPollMapping
   /** 按顺序匹配模型 ID，支持 * 通配符；匹配后使用整套接口映射 */
   modelOverrides?: Array<{
     models: string[]
+    imageSize?: CustomProviderImageSize
     submit: CustomProviderSubmitMapping
     editSubmit?: CustomProviderSubmitMapping
     poll?: CustomProviderPollMapping
@@ -88,6 +97,8 @@ export interface ApiProfile {
   model: string
   /** 首页选中的模型；不在列表中时回退到第一个 */
   selectedModel?: string
+  /** 在首页输入框的模型列表中展示此配置 */
+  showInModelList?: boolean
   imageGenerationModel?: string
   timeout: number
   apiMode: ApiMode
@@ -101,6 +112,7 @@ export interface ApiProfile {
   transparentBackgroundMethod: 'api' | 'local'
   /** 生成 SVG 时负责编写 SVG 的文本模型，留空使用默认值 */
   svgModel?: string
+  svgReasoningEffort?: ReasoningEffort
   providerDrafts?: Partial<Record<ApiProvider, Partial<Pick<ApiProfile, 'baseUrl' | 'model' | 'imageGenerationModel' | 'apiMode' | 'reasoningEffort' | 'codexCli' | 'apiProxy' | 'responseFormatB64Json' | 'responseFormatUrl' | 'streamImages' | 'streamPartialImages' | 'transparentBackgroundMethod'>>>>
 }
 
@@ -200,6 +212,8 @@ export const GIF_FRAME_DURATION_RANGE = { min: 20, max: 2000 }
 
 /** 参数面板中不可选的项及原因，undefined 表示可选 */
 export interface ParamDisabledReasons {
+  outputFormat?: string
+  moderation?: string
   complexity?: string
   gif?: string
   svg?: string
@@ -228,6 +242,17 @@ export interface TaskParams {
   /** 仅 GIF 输出 */
   frame_count: number
   frame_duration_ms: number
+}
+
+export interface ImageParameterControl {
+  type: 'string' | 'enum' | 'boolean' | 'integer'
+  visible: boolean
+  disabledReason?: string
+  options?: Array<{ label: string; value: string; disabledReason?: string }>
+  min?: number
+  max?: number
+  nullable?: boolean
+  hint?: string
 }
 
 export const DEFAULT_PARAMS: TaskParams = {
@@ -414,6 +439,13 @@ export interface ImageApiResponse {
   n?: number
 }
 
+/** 大图预览的来源上下文：输入框参考图或历史任务（用于编辑遮罩回填） */
+export type LightboxContext = { type: 'input' } | {
+  type: 'history'
+  maskTargetImageId?: string | null
+  maskImageId?: string | null
+}
+
 export interface ResponsesInputContentItem {
   type?: string
   text?: string
@@ -497,6 +529,7 @@ export interface FalImageFile {
 }
 
 export interface FalApiResponse {
+  grounding_metadata?: unknown[]
   images?: FalImageFile[]
   image?: FalImageFile | string
   url?: string

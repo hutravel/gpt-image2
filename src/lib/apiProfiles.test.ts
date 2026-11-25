@@ -2,13 +2,15 @@ import { shouldReturnBase64 } from './apiProfiles'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_FAL_BASE_URL,
-  DEFAULT_FAL_MODEL,
+  DEFAULT_FAL_MODEL_LIST,
   DEFAULT_IMAGES_MODEL,
   DEFAULT_RESPONSES_MODEL,
   DEFAULT_OPENAI_PROFILE_ID,
   DEFAULT_SETTINGS,
   createDefaultOpenAIProfile,
   createDefaultFalProfile,
+  getApiProfileContentKey,
+  getApiProfileModelGroups,
   getApiProviderLabel,
   getActiveApiProfile,
   getCustomProviderDefinition,
@@ -27,8 +29,12 @@ import {
 } from './apiProfiles'
 import { CUSTOM_PROVIDER_LLM_PROMPT, DEFAULT_CUSTOM_PROVIDER_JSON } from './settingsCustomProvider'
 
+const platform = vi.hoisted(() => ({ isTauri: false }))
+vi.mock('./platform', () => platform)
+
 afterEach(() => {
   vi.unstubAllEnvs()
+  platform.isTauri = false
 })
 
 describe('validateApiProfile', () => {
@@ -271,7 +277,7 @@ describe('mergeImportedSettings', () => {
           provider: 'fal',
           baseUrl: DEFAULT_FAL_BASE_URL,
           apiKey: 'fal-key',
-          model: DEFAULT_FAL_MODEL,
+          model: DEFAULT_FAL_MODEL_LIST,
           timeout: 300,
           apiMode: 'images',
           codexCli: false,
@@ -370,7 +376,7 @@ describe('mergeImportedSettings', () => {
           provider: 'fal',
           baseUrl: DEFAULT_FAL_BASE_URL,
           apiKey: 'fal-key',
-          model: DEFAULT_FAL_MODEL,
+          model: DEFAULT_FAL_MODEL_LIST,
           timeout: 300,
           apiMode: 'images',
           codexCli: false,
@@ -414,7 +420,7 @@ describe('mergeImportedSettings', () => {
           provider: 'fal',
           baseUrl: DEFAULT_FAL_BASE_URL,
           apiKey: 'fal-key',
-          model: DEFAULT_FAL_MODEL,
+          model: DEFAULT_FAL_MODEL_LIST,
           timeout: 300,
           apiMode: 'images',
           codexCli: false,
@@ -426,7 +432,7 @@ describe('mergeImportedSettings', () => {
     expect(merged.profiles).toHaveLength(3)
     expect(merged.profiles[0]).toMatchObject({ apiKey: 'current-key', model: 'current-model' })
     expect(merged.profiles[1]).toMatchObject({ id: 'duplicate-openai', apiKey: 'current-key', model: 'current-model' })
-    expect(merged.profiles[2]).toMatchObject({ provider: 'fal', apiKey: 'fal-key', model: DEFAULT_FAL_MODEL })
+    expect(merged.profiles[2]).toMatchObject({ provider: 'fal', apiKey: 'fal-key', model: DEFAULT_FAL_MODEL_LIST })
   })
 
   it('preserves an imported custom profile ID when its connection matches an existing profile', () => {
@@ -682,7 +688,7 @@ describe('mergePresetImportedSettings', () => {
     const changedAgain = mergeDefaultImportedSettings(repeated.settings, lastConfig, { previousPresetConfig: repeated.presetConfig })
 
     expect(merged.activeProfileId).toBe('source-profile')
-    expect(merged.profiles.map((profile) => profile.model)).toEqual(['later-local-model', DEFAULT_FAL_MODEL])
+    expect(merged.profiles.map((profile) => profile.model)).toEqual(['later-local-model', DEFAULT_FAL_MODEL_LIST])
     expect(merged.profiles[0]).toMatchObject({
       id: 'source-profile',
       baseUrl: 'https://later-local.example.com/v1',
@@ -861,7 +867,7 @@ describe('mergePresetImportedSettings', () => {
     expect(merged.profiles[0]).toMatchObject({
       provider: 'fal',
       baseUrl: DEFAULT_FAL_BASE_URL,
-      model: DEFAULT_FAL_MODEL,
+      model: DEFAULT_FAL_MODEL_LIST,
     })
   })
 
@@ -1784,6 +1790,51 @@ describe('model list', () => {
   })
 })
 
+describe('homepage model groups', () => {
+  const profile = (id: string, model: string, extra: Record<string, unknown> = {}) => normalizeApiProfile({ id, name: id, model, apiKey: `${id}-key`, ...extra })
+
+  it('lists the active profile and the profiles with quick switch enabled', () => {
+    const groups = getApiProfileModelGroups({
+      profiles: [profile('a', 'm1,m2'), profile('b', 'm3'), profile('c', 'm4', { showInModelList: true })],
+      activeProfileId: 'b',
+    })
+
+    expect(groups.map((group) => group.profileId)).toEqual(['b', 'c'])
+    expect(groups[0]).toMatchObject({ name: 'b', models: ['m3'], providerLabel: 'OpenAI' })
+    expect(groups[1].models).toEqual(['m4'])
+  })
+
+  it('keeps the active profile first and keeps configuration order for the rest', () => {
+    const groups = getApiProfileModelGroups({
+      profiles: [profile('a', 'm1', { showInModelList: true }), profile('b', 'm2'), profile('c', 'm3', { showInModelList: true })],
+      activeProfileId: 'b',
+    })
+
+    expect(groups.map((group) => group.profileId)).toEqual(['b', 'a', 'c'])
+  })
+
+  it('only stores showInModelList when enabled and keeps it out of the content key', () => {
+    expect(normalizeApiProfile({ id: 'a', showInModelList: false }).showInModelList).toBeUndefined()
+    expect(normalizeApiProfile({ id: 'a' }).showInModelList).toBeUndefined()
+    expect(normalizeApiProfile({ id: 'a', showInModelList: true }).showInModelList).toBe(true)
+
+    const base = normalizeApiProfile({ id: 'a', model: 'm1' })
+    expect(getApiProfileContentKey({ ...base, showInModelList: true })).toBe(getApiProfileContentKey(base))
+  })
+
+  it('keeps every model of a temporarily reused profile regardless of homepage visibility', () => {
+    const settings = normalizeSettings({
+      profiles: [profile('a', 'm1', { showInModelList: true }), profile('b', 'm2,m3')],
+      activeProfileId: 'a',
+    })
+    const active = resolveApiProfileModel(settings.profiles[1], 'm3')
+
+    expect(active.model).toBe('m3')
+    expect(getApiProfileModelGroups(settings, active.id, false)).toEqual([
+      { profileId: 'b', name: 'b', providerLabel: 'OpenAI', models: ['m2', 'm3'] },
+    ])
+  })
+})
 
 describe('native provider Base64 defaults', () => {
   it.each(['xai', 'bytedance'] as const)('enables Base64 for a new %s configuration without leaking into other providers', (provider) => {
@@ -1825,5 +1876,28 @@ it('keeps automatic defaults and explicit choices distinct across repeated URL c
       expect(profile.responseFormatB64Json).toBe(persisted)
       expect(shouldReturnBase64(profile)).toBe(persisted)
     }
+  }
+})
+
+it('keeps streaming independent of Base64 domain defaults', () => {
+  for (const apiMode of ['images', 'responses'] as const) {
+    for (const streamImages of [undefined, true, false]) {
+      let profile = createDefaultOpenAIProfile({ apiMode, streamImages })
+      for (const baseUrl of ['https://api.x.ai/v1', 'https://ark.cn-beijing.volces.com/api/v3', 'https://ark.ap-southeast.bytepluses.com/api/v3', 'https://example.com/v1']) {
+        profile = normalizeApiProfile(JSON.parse(JSON.stringify({ ...profile, baseUrl, responseFormatB64Json: undefined })))
+        expect(profile.streamImages).toBe(streamImages ?? (apiMode === 'responses'))
+        // fork：未显式设置时默认开启 Base64（中转站直接返回数据更可靠）
+        expect(shouldReturnBase64(profile)).toBe(true)
+      }
+    }
+  }
+})
+
+it('initializes additional default URL configuration fields', async () => {
+  vi.resetModules()
+  vi.stubEnv('VITE_DEFAULT_API_URL', 'https://example.com?svgModel=svg-author&svgReasoningEffort=high&timeout=120')
+  const mod = await import('./apiProfiles')
+  for (const profile of [mod.createDefaultOpenAIProfile(), mod.DEFAULT_SETTINGS.profiles[0]]) {
+    expect(profile).toMatchObject({ svgModel: 'svg-author', svgReasoningEffort: 'high', timeout: 120 })
   }
 })

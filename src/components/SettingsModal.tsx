@@ -7,14 +7,14 @@ import { customProviderSupportsNativeTransparentBackground } from '../lib/custom
 import { hasActiveDataOperations, trackDataTransfer } from '../lib/dataOperations'
 import { useSettingsDataTransfer } from '../lib/dataProgress'
 import { isApiProxyAvailable, isApiProxyLocked, readClientDevProxyConfig } from '../lib/devProxy'
-import { DEFAULT_SVG_MODEL, getImageModelFamily, isGptImage26PlusModel } from '../lib/imageModels'
+import { DEFAULT_SVG_MODEL, getEffectiveImageGenerationModel, getImageModelFamily, isGptImage26PlusModel } from '../lib/imageModels'
 import { isTauri } from '../lib/platform'
 import { useStore, exportData, importData, clearData, type SettingsTab } from '../store'
 import {
   createDefaultOpenAIProfile,
   NATIVE_IMAGE_PROVIDERS,
   DEFAULT_FAL_BASE_URL,
-  DEFAULT_FAL_MODEL,
+  DEFAULT_FAL_MODEL_LIST,
   DEFAULT_IMAGES_MODEL,
   DEFAULT_RESPONSES_MODEL,
   DEFAULT_SETTINGS,
@@ -44,7 +44,7 @@ import {
   isPresetProviderLocked,
 } from '../lib/presetConfig'
 import { copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboard'
-import { createCustomProfileImportUrl } from '../lib/profileImportUrl'
+import { createCustomProfileImportUrl, createOpenAIProfileImportUrl } from '../lib/profileImportUrl'
 import { getProfileImportBaseUrl, handledImportLinks } from '../lib/importLink'
 import { requestBrowserNotificationPermission, type BrowserNotificationPermissionResult } from '../lib/browserNotification'
 import { DEFAULT_STREAM_PARTIAL_IMAGES, REASONING_EFFORT_VALUES, type ApiProfile, type AppSettings, type CustomProviderDefinition, type ReasoningEffort, type ZipDownloadRoute } from '../types'
@@ -137,6 +137,7 @@ function isPristineNewOpenAIProfile(profile: ApiProfile) {
     profile.model === DEFAULT_IMAGES_MODEL &&
     profile.imageGenerationModel === DEFAULT_IMAGES_MODEL &&
     !profile.svgModel &&
+    !profile.svgReasoningEffort &&
     profile.timeout === DEFAULT_SETTINGS.timeout &&
     profile.apiMode === 'images' &&
     profile.reasoningEffort === undefined &&
@@ -257,9 +258,8 @@ export default function SettingsModal() {
   const activeCustomProviderAsync = isAsyncCustomProvider(activeCustomProvider)
   const isResponsesProfile = activeProfile.provider === 'openai' && (activeProfile.apiMode ?? DEFAULT_SETTINGS.apiMode) === 'responses'
   // 只有 GPT Image 2.6 及以上能输出 SVG，才需要填写编写 SVG 的文本模型
-  // fal.ai 的 SVG 暂不开放，原因见 falAiImageApi 中的说明；恢复时把 fal 加回判断
-  const showSvgModel = activeProfile.provider !== 'fal' && !activeProfile.codexCli && (isResponsesProfile
-    ? isGptImage26PlusModel(activeProfile.imageGenerationModel ?? '')
+  const showSvgModel = !activeProfile.codexCli && (isResponsesProfile
+    ? isGptImage26PlusModel(getEffectiveImageGenerationModel(activeProfile))
     : splitModelList(activeProfile.model).some(isGptImage26PlusModel))
   const apiProxyChecked = activeProfileApiProxyEligible && (apiProxyLocked || activeProfile.apiProxy)
   const apiProxyEnabled = apiProxyAvailable && activeProfileApiProxyEligible && apiProxyChecked
@@ -435,36 +435,7 @@ export default function SettingsModal() {
 
   const createProfileImportUrl = (profile: ApiProfile, options: ProfileImportUrlOptions) => {
     const pageUrl = getProfileImportBaseUrl(isTauri, window.location.href)
-    const url = new URL(pageUrl)
-    url.search = ''
-    url.hash = ''
-
-    if (profile.provider === 'openai') {
-      const baseUrl = profile.baseUrl.trim() || DEFAULT_SETTINGS.baseUrl
-      url.searchParams.set('apiUrl', options.useNewApiAddress && !options.includeApiKey ? '{address}' : normalizeBaseUrl(baseUrl))
-      if (options.includeApiKey && profile.apiKey.trim()) {
-        url.searchParams.set('apiKey', profile.apiKey.trim())
-      } else if (!options.includeApiKey && options.useNewApiKey) {
-        url.searchParams.set('apiKey', '{key}')
-      }
-      url.searchParams.set('apiMode', profile.apiMode)
-      const model = profile.model.trim() || getDefaultModelForMode(profile.apiMode)
-      url.searchParams.set('model', !options.includeApiKey && options.useNewApiModel ? '{model}' : model)
-      if (profile.name.trim()) url.searchParams.set('profileName', profile.name.trim())
-      if (profile.reasoningEffort) url.searchParams.set('reasoningEffort', profile.reasoningEffort)
-      if (profile.codexCli) url.searchParams.set('codexCli', 'true')
-      if (profile.streamImages !== DEFAULT_SETTINGS.streamImages) url.searchParams.set('streamImages', String(Boolean(profile.streamImages)))
-      if (profile.streamPartialImages !== DEFAULT_STREAM_PARTIAL_IMAGES) url.searchParams.set('streamPartialImages', String(normalizeStreamPartialImages(profile.streamPartialImages)))
-      if (profile.transparentBackgroundMethod !== 'api') url.searchParams.set('transparentBackgroundMethod', profile.transparentBackgroundMethod)
-
-      let result = url.toString()
-      if (!options.includeApiKey) {
-        if (options.useNewApiAddress) result = result.replace('%7Baddress%7D', '{address}')
-        if (options.useNewApiKey) result = result.replace('%7Bkey%7D', '{key}')
-        if (options.useNewApiModel) result = result.replace('%7Bmodel%7D', '{model}')
-      }
-      return result
-    }
+    if (profile.provider === 'openai') return createOpenAIProfileImportUrl(pageUrl, profile, options)
 
     return createCustomProfileImportUrl(
       pageUrl,
@@ -1030,7 +1001,18 @@ export default function SettingsModal() {
           data-no-drag-select
           className="fixed inset-0 z-[70] flex items-center justify-center p-4"
           onPointerDownCapture={blockDataTransferInteraction}
-          onClickCapture={blockDataTransferClick}
+          onClickCapture={(e) => {
+            blockDataTransferClick(e)
+            if (e.defaultPrevented || !(e.target instanceof Element)) return
+            if (e.target.closest('input, textarea, select, button, a, [contenteditable="true"], [role="button"]')) return
+            const control = e.target.closest('label')?.control
+            if (control instanceof HTMLTextAreaElement || (control instanceof HTMLInputElement && !['checkbox', 'radio'].includes(control.type))) {
+              e.preventDefault()
+            }
+            if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) {
+              document.activeElement.blur()
+            }
+          }}
           onContextMenuCapture={blockDataTransferInteraction}
         >
       <div
@@ -1305,6 +1287,26 @@ export default function SettingsModal() {
                       <MarkdownRenderer content={activePresetDescription} className="min-w-0 flex-1" />
                     </div>
                   )}
+                  {!presetConfigOnly && !activeProfileLocked && (
+                    <div className="mt-4 block">
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="block text-sm text-gray-600 dark:text-gray-300">在输入框模型列表中展示</span>
+                        <button
+                          type="button"
+                          onClick={() => commitActiveProfilePatch({ showInModelList: !activeProfile.showInModelList || undefined })}
+                          className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${activeProfile.showInModelList ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                          role="switch"
+                          aria-checked={Boolean(activeProfile.showInModelList)}
+                          aria-label="在输入框模型列表中展示"
+                        >
+                          <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${activeProfile.showInModelList ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
+                        </button>
+                      </div>
+                      <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
+                        开启后，此配置及其模型会出现在首页输入框的模型列表中，可直接切换模型和配置。
+                      </div>
+                    </div>
+                  )}
                 </div>
 
               {/* 服务商类型 */}
@@ -1378,6 +1380,7 @@ export default function SettingsModal() {
                 <label className="block">
                   <span className="mb-1.5 block text-sm text-gray-600 dark:text-gray-300">图像模型 ID</span>
                   <input
+                    aria-label="图像模型 ID"
                     value={activeProfile.imageGenerationModel ?? ''}
                     onChange={(e) => updateActiveProfile({ imageGenerationModel: e.target.value })}
                     onBlur={(e) => commitActiveProfilePatch({ imageGenerationModel: e.target.value })}
@@ -1387,27 +1390,56 @@ export default function SettingsModal() {
                     className="w-full rounded-xl border border-transparent bg-black/[0.04] px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:bg-white/[0.06] dark:text-gray-200 dark:focus:border-blue-500/50"
                   />
                   <div data-selectable-text className="mt-1.5 text-xs leading-6 text-gray-500 dark:text-gray-500">
-                    <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">image_generation</code> 工具实际出图的 GPT Image 模型，例如 <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">{DEFAULT_IMAGES_MODEL}</code>。支持通过链接参数导入：<code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">?imageGenerationModel=</code>。
+                    <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">image_generation</code> 工具实际出图的 GPT Image 模型，复杂度和输出格式由此模型决定。留空使用接口默认模型，例如 <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">{DEFAULT_IMAGES_MODEL}</code>。支持通过链接参数导入：<code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">?imageGenerationModel=</code>。
                   </div>
                 </label>
               )}
 
               {showSvgModel && (
-                <label className="block">
-                  <span className="mb-1.5 block text-sm text-gray-600 dark:text-gray-300">SVG 编写模型 ID</span>
-                  <input
-                    value={activeProfile.svgModel ?? ''}
-                    onChange={(e) => updateActiveProfile({ svgModel: e.target.value })}
-                    onBlur={(e) => commitActiveProfilePatch({ svgModel: e.target.value.trim() || undefined })}
-                    type="text"
-                    disabled={activeProfileLocked}
-                    placeholder={DEFAULT_SVG_MODEL}
-                    className="w-full rounded-xl border border-transparent bg-black/[0.04] px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:bg-white/[0.06] dark:text-gray-200 dark:focus:border-blue-500/50"
-                  />
-                  <div data-selectable-text className="mt-1.5 text-xs leading-6 text-gray-500 dark:text-gray-500">
-                    输出 SVG 时，图像模型先生成参考图，再由该文本模型编写 SVG，其 token 用量另行计费。留空时使用 <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">{DEFAULT_SVG_MODEL}</code>。
-                  </div>
-                </label>
+                <div className="space-y-3">
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm text-gray-600 dark:text-gray-300">SVG 编写模型 ID</span>
+                    <input
+                      aria-label="SVG 编写模型 ID"
+                      value={activeProfile.svgModel ?? ''}
+                      onChange={(e) => updateActiveProfile({ svgModel: e.target.value })}
+                      onBlur={(e) => commitActiveProfilePatch({ svgModel: e.target.value.trim() || undefined })}
+                      type="text"
+                      disabled={activeProfileLocked}
+                      placeholder={activeProfile.provider === 'fal' ? '留空使用接口默认模型' : isResponsesProfile ? '留空使用 Responses 模型' : DEFAULT_SVG_MODEL}
+                      className="w-full rounded-xl border border-transparent bg-black/[0.04] px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:bg-white/[0.06] dark:text-gray-200 dark:focus:border-blue-500/50"
+                    />
+                    <div data-selectable-text className="mt-1.5 text-xs leading-6 text-gray-500 dark:text-gray-500">
+                      {activeProfile.provider === 'fal'
+                        ? '输出 SVG 时，图像模型先生成位图，再由文本模型转换为矢量图。'
+                        : <>输出 SVG 时，图像模型先生成位图，再由该文本模型编写 SVG，其 token 用量另行计费。{isResponsesProfile
+                          ? '留空时不指定 SVG 编写模型，由接口使用 Responses 模型或默认编写模型。'
+                          : <>留空时使用 <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">{DEFAULT_SVG_MODEL}</code>。</>}</>}
+                    </div>
+                  </label>
+                  {activeProfile.provider !== 'fal' && (
+                    <div className="block">
+                      <div className="mb-1.5 flex items-center justify-between gap-3">
+                        <span className="block text-sm text-gray-600 dark:text-gray-300">SVG 推理强度</span>
+                        <div className="w-28 shrink-0">
+                          <Select
+                            value={activeProfile.svgReasoningEffort ?? ''}
+                            onChange={(value) => updateActiveProfile({ svgReasoningEffort: value ? value as ReasoningEffort : undefined }, true)}
+                            options={[
+                              { label: '默认', value: '' },
+                              ...REASONING_EFFORT_VALUES.map((value) => ({ label: value, value })),
+                            ]}
+                            disabled={activeProfileLocked}
+                            className="w-full rounded-xl border border-transparent bg-black/[0.04] px-3 py-1.5 text-xs text-gray-700 outline-none transition focus:border-blue-300 dark:bg-white/[0.06] dark:text-gray-200 dark:focus:border-blue-500/50"
+                          />
+                        </div>
+                      </div>
+                      <div data-selectable-text className="text-xs leading-6 text-gray-500 dark:text-gray-500">
+                        SVG 编写模型的思考深度，档位越高耗时越长，有助于完成复杂任务。并非所有模型都支持全部档位，默认使用模型自身设置。
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* 8. 流式传输 + 中间步骤图像数 */}
@@ -1429,7 +1461,7 @@ export default function SettingsModal() {
                       </button>
                     </div>
                     <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
-                      开启后请求以流式传输，xAI、字节跳动官方域名默认开启，手动设置后不随地址变化。并非所有服务商和网关都支持此功能。官方接口在流式模式下不发送心跳，需要配合请求中间步骤图像来维持连接，避免超时断开。官方接口仅支持单图流式传输，因此数量大于 1 时会将多图生成拆分为并发单图。
+                      开启后请求以流式传输，xAI、字节跳动官方域名默认开启，手动设置后不随地址变化。并非所有服务商和网关都支持此功能。官方接口在流式模式下不发送心跳，Images API 需要配合请求中间步骤图像来维持连接，避免超时断开，且仅支持单图流式传输，因此数量大于 1 时会将多图生成拆分为并发单图。GIF 仅在 Responses API 下流式返回任务状态和最终结果，不请求中间图；SVG 不启用流式。
                     </div>
                   </div>
                   <div className={`block ${activeProfile.streamImages ? '' : 'opacity-60'}`}>

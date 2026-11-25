@@ -12,6 +12,7 @@ import type {
   TaskParams,
   InputImage,
   MaskDraft,
+  LightboxContext,
   SketchBoardRequest,
   TaskRecord,
   FavoriteCollection,
@@ -47,9 +48,11 @@ import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
 import { OPENAI_IMAGE_TASK_PROVIDER, resolveCustomProviderModel } from './lib/imageProviderMappings'
 import { toApiInputImageDataUrl, validateMaskMatchesImage } from './lib/canvasImage'
 import { persistTaskInputImages, toReferenceImage } from './lib/inputImages'
+import { getInputImageLimitError } from './lib/inputImageLimits'
 import { orderInputImagesForMask } from './lib/mask'
-import { getChangedParams, getTaskParamSupport, normalizeParamsForSettings, supportsTransparentOutput } from './lib/paramCompatibility'
-import { getImageModelFamily, isVectorOrAnimatedFormat } from './lib/imageModels'
+import { getChangedParams, getTaskParamSupport, getMaskDisabledReason, normalizeParamsForSettings, supportsTransparentOutput } from './lib/paramCompatibility'
+import { getImageRequestExecution } from './lib/imageRequestExecution'
+import { isVectorOrAnimatedFormat } from './lib/imageModels'
 import { runWithConcurrency, splitBatchPrompts } from './lib/batchPrompts'
 import { createTransparentOutputMeta, getTransparentRequestParams, removeKeyedBackgroundFromDataUrl } from './lib/transparentImage'
 import { blobToDataUrl, fileToDataUrl } from './lib/dataUrl'
@@ -62,9 +65,10 @@ import { getExportImageSizes, readExportImages } from './lib/exportImages'
 import { clearInputDraftState, isEmptyInputDraft, restoreGalleryInputDraftState, saveGalleryInputDraft, syncActiveInputDraft, updateInputDraftImages } from './lib/inputDraftState'
 import { ALL_FAVORITES_COLLECTION_ID, DEFAULT_FAVORITE_COLLECTION_ID, createDefaultFavoriteCollection, deleteFavoriteCollectionState, ensureDefaultFavoriteCollection, getNewTaskFavoritePatch, getTaskFavoriteCollectionIds, mergeFavoriteCollections, normalizeFavoriteCollectionIds, normalizeFavoriteCollectionName, normalizeFavoriteCollections, normalizeFavoritePatch, normalizeLoadedFavoriteState, resolveDefaultFavoriteCollectionId, sameFavoriteCollectionIds } from './lib/favoriteState'
 import { createPersistedState, migratePersistedState, normalizePersistedState } from './lib/persistedState'
-import { addImageSizeParam, createTaskDonePatch, createTaskErrorPatch, deriveGalleryActualParams, firstActualParams, hasActualParams, hasActualSizeParam, mapActualParamsByImage, mapRevisedPromptsByImage, markInterruptedOpenAIRunningTasks } from './lib/taskState'
+import { createTaskDonePatch, createTaskErrorPatch, deriveGalleryActualParams, firstActualParams, getTaskOutputSlots, hasActualParams, mapActualParamsByImage, mapRevisedPromptsByImage, markInterruptedOpenAIRunningTasks, normalizeTaskImageMetadata } from './lib/taskState'
 import { getPersistableRawResponsePayload } from './lib/taskResponsePayload'
 import { stripInjectedCodexCliSizePrompt } from './lib/size'
+import { addTaskReferencedImageIds, getReferencedImageIds } from './lib/imageReferences'
 import { apiFetch, FetchConnectError, isTauri } from './lib/platform'
 import { pickSaveDir, saveFile, saveFileToDir, type SaveOptions } from './lib/saveFile'
 import { endDataProgress, setDataProgressCancelable, startDataProgress, updateDataProgress, useSettingsDataTransfer } from './lib/dataProgress'
@@ -79,6 +83,7 @@ const falRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const customRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const openAIWatchdogTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const taskExecutions = new Map<string, symbol>()
+const taskRequestControllers = new Map<string, AbortController>()
 const ERROR_TOAST_MAX_LENGTH = 80
 type ToastType = 'info' | 'success' | 'error'
 
@@ -330,7 +335,8 @@ interface AppState {
   lightboxCommentPrompt: string | null
   /** 预览参考图时各图片对应的 markup 标注层 image store id；同一参考图在不同任务中的标注不同，需随预览传入 */
   lightboxMarkupIds: Record<string, string | undefined>
-  setLightboxImageId: (id: string | null, list?: string[], commentPrompt?: string | null, markupIds?: Record<string, string | undefined>) => void
+  lightboxContext: LightboxContext | null
+  setLightboxImageId: (id: string | null, list?: string[], commentPrompt?: string | null, markupIds?: Record<string, string | undefined>, context?: LightboxContext | null) => void
   /** 画板；baseImageSrc 为画布底图，replaceImageId 为完成后要替换的参考图 */
   sketchBoard: SketchBoardRequest | null
   setSketchBoard: (board: SketchBoardRequest | null) => void
@@ -390,24 +396,8 @@ interface AppState {
   togglePrivacyMode: () => void
 }
 
-function isImageReferencedByState(state: AppState, imageId: string) {
-  if (state.inputImages.some((img) => img.id === imageId || img.markupImageId === imageId)) return true
-  if (state.galleryInputDraft?.inputImages.some((img) => img.id === imageId || img.markupImageId === imageId)) return true
-  if (getPrivacySnapshotImageIds(state.privacyMode).includes(imageId)) return true
-  if (state.tasks.some((task) =>
-    task.inputImageIds.includes(imageId) ||
-    task.outputImages.includes(imageId) ||
-    task.transparentOriginalImages?.includes(imageId) ||
-    task.streamPartialImageIds?.includes(imageId) ||
-    task.maskTargetImageId === imageId ||
-    task.maskImageId === imageId ||
-    task.markupImageId === imageId
-  )) return true
-  return legacyImageIds.has(imageId)
-}
-
 export async function deleteImageIfUnreferenced(imageId: string) {
-  if (isImageReferencedByState(useStore.getState(), imageId)) return
+  if (getReferencedImageIds(useStore.getState()).has(imageId)) return
   try {
     await deleteStoredImageIfUnreferenced(imageId)
   } catch {
@@ -425,12 +415,12 @@ function forgetImageSourceUrl(imageId: string) {
 }
 
 async function deleteStoredImageIfUnreferenced(imageId: string) {
-  if (isImageReferencedByState(useStore.getState(), imageId)) return
+  if (getReferencedImageIds(useStore.getState()).has(imageId)) return
   const [image, thumbnail] = await Promise.all([getImage(imageId), getStoredImageThumbnail(imageId)])
-  if (isImageReferencedByState(useStore.getState(), imageId)) return
+  if (getReferencedImageIds(useStore.getState()).has(imageId)) return
 
   await deleteImage(imageId)
-  if (!isImageReferencedByState(useStore.getState(), imageId)) {
+  if (!getReferencedImageIds(useStore.getState()).has(imageId)) {
     deleteImageCacheEntry(imageId)
     forgetImageSourceUrl(imageId)
     return
@@ -800,13 +790,15 @@ export const useStore = create<AppState>()(
       lightboxImageList: [],
       lightboxCommentPrompt: null,
       lightboxMarkupIds: {},
-      setLightboxImageId: (lightboxImageId, list, commentPrompt = null, markupIds = {}) => {
+      lightboxContext: null,
+      setLightboxImageId: (lightboxImageId, list, commentPrompt = null, markupIds = {}, context = null) => {
         if (lightboxImageId) dismissAllTooltips()
         set({
           lightboxImageId,
           lightboxImageList: list ?? (lightboxImageId ? [lightboxImageId] : []),
           lightboxCommentPrompt: lightboxImageId ? commentPrompt : null,
           lightboxMarkupIds: lightboxImageId ? markupIds : {},
+          lightboxContext: lightboxImageId ? context : null,
         })
       },
       sketchBoard: null,
@@ -898,6 +890,7 @@ export const useStore = create<AppState>()(
           lightboxImageList: [],
           lightboxCommentPrompt: null,
           lightboxMarkupIds: {},
+          lightboxContext: null,
           sketchBoard: null,
           favoritePickerTaskIds: null,
           isManageCollectionsModalOpen: false,
@@ -925,8 +918,9 @@ function genId(): string {
 }
 
 function getPersistableTask(task: TaskRecord): TaskRecord {
-  const rawResponsePayload = getPersistableRawResponsePayload(task.rawResponsePayload)
-  return rawResponsePayload === task.rawResponsePayload ? task : { ...task, rawResponsePayload }
+  const normalized = normalizeTaskImageMetadata(task)
+  const rawResponsePayload = getPersistableRawResponsePayload(normalized.rawResponsePayload)
+  return rawResponsePayload === normalized.rawResponsePayload ? normalized : { ...normalized, rawResponsePayload }
 }
 
 function putTask(task: TaskRecord): Promise<IDBValidKey> {
@@ -940,15 +934,6 @@ export function getCodexCliPromptKey(settings: AppSettings): string {
 
 function isRunningOpenAITask(task: TaskRecord) {
   return task.status === 'running' && (task.apiProvider ?? 'openai') !== 'fal' && !task.customTaskId
-}
-
-function isAsyncCustomProviderTask(settings: AppSettings, profile: ApiProfile, hasInputImages: boolean) {
-  const definition = getCustomProviderDefinition(settings, profile.provider)
-  if (!definition) return false
-  const customProvider = resolveCustomProviderModel(definition, profile.model)
-  if (!customProvider.poll) return false
-  const submitMapping = hasInputImages && customProvider.editSubmit ? customProvider.editSubmit : customProvider.submit
-  return Boolean(submitMapping.taskIdPath)
 }
 
 function clearOpenAIWatchdogTimer(taskId: string) {
@@ -983,18 +968,6 @@ function scheduleOpenAIWatchdog(taskId: string, timeoutSeconds: number, profile?
     if (failed && !isTaskHiddenByPrivacyMode(task)) useStore.getState().showToast('OpenAI 任务请求超时', 'error')
   }, remainingMs)
   openAIWatchdogTimers.set(taskId, timer)
-}
-
-function usesConcurrentImageRequests(settings: AppSettings, profile: ApiProfile, params: TaskParams, hasInputImages: boolean) {
-  const n = params.n > 0 ? params.n : 1
-  if (n <= 1) return false
-  if (profile.provider === 'google') return true
-  if (getImageModelFamily(profile)) return false
-  if (profile.provider === 'openai') {
-    if (profile.apiMode === 'responses') return true
-    return profile.apiMode === 'images' && (profile.codexCli || params.output_format === 'svg' || (profile.streamImages && params.output_format !== 'gif'))
-  }
-  return profile.provider !== 'fal' && (profile.codexCli || params.output_format === 'svg') && !isAsyncCustomProviderTask(settings, profile, hasInputImages)
 }
 
 export function taskHasOutputErrors(task: Pick<TaskRecord, 'outputErrors'>) {
@@ -1162,6 +1135,12 @@ function clearCustomRecoveryTimer(taskId: string) {
   customRecoveryTimers.delete(taskId)
 }
 
+function stopTaskRequest(taskId: string) {
+  clearCustomRecoveryTimer(taskId)
+  taskRequestControllers.get(taskId)?.abort()
+  taskRequestControllers.delete(taskId)
+}
+
 function scheduleCustomRecovery(taskId: string, delayMs = CUSTOM_RECOVERY_POLL_MS) {
   if (customRecoveryTimers.has(taskId)) return
   if (!useStore.getState().tasks.some((task) => task.id === taskId)) return
@@ -1172,64 +1151,13 @@ function scheduleCustomRecovery(taskId: string, delayMs = CUSTOM_RECOVERY_POLL_M
   customRecoveryTimers.set(taskId, timer)
 }
 
-async function readImageSizeParam(dataUrl: string): Promise<Partial<TaskParams> | undefined> {
-  if (typeof Image === 'undefined') return undefined
-
-  return new Promise((resolve) => {
-    let settled = false
-    const image = new Image()
-    const finish = (params: Partial<TaskParams> | undefined) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      resolve(params)
-    }
-    const timer = setTimeout(() => finish(undefined), 2000)
-    image.onload = () => {
-      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-        finish({ size: `${image.naturalWidth}x${image.naturalHeight}` })
-      } else {
-        finish(undefined)
-      }
-    }
-    image.onerror = () => finish(undefined)
-    image.src = dataUrl
-    if (image.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
-      finish({ size: `${image.naturalWidth}x${image.naturalHeight}` })
-    }
-  })
-}
-
-async function readImageSizeParamsList(images: string[]): Promise<Array<Partial<TaskParams> | undefined>> {
-  return Promise.all(images.map((image) => readImageSizeParam(image)))
-}
-
-async function resolveImageSizeParamsList(
-  images: string[],
-  preferred?: Array<Partial<TaskParams> | undefined>,
-  sizes?: Array<{ width?: number; height?: number } | undefined>,
-): Promise<Array<Partial<TaskParams> | undefined>> {
-  const withStoredSizes = images.map((_, index) => addImageSizeParam(preferred?.[index], sizes?.[index]))
-  if (withStoredSizes.every(hasActualSizeParam)) {
-    return withStoredSizes
-  }
-  const fallback = await readImageSizeParamsList(images)
-  return images.map((_, index) => {
-    const params = withStoredSizes[index]
-    const fallbackParams = fallback[index]
-    if (hasActualSizeParam(params)) return params
-    if (fallbackParams?.size) return { ...(params ?? {}), size: fallbackParams.size }
-    return hasActualParams(params) ? params : fallbackParams
-  })
-}
-
 async function completeRecoveredFalTask(task: TaskRecord, result: Awaited<ReturnType<typeof getFalQueuedImageResult>>) {
   const latest = useStore.getState().tasks.find((item) => item.id === task.id)
   if (!latest || latest.status === 'done') return
   if (latest.status !== 'running' && !latest.falRecoverable) return
 
-  const { outputIds, outputDataUrls, outputImageSizes, transparentOriginalImageIds } = await storeTaskOutputImages(task, result.images)
-  const actualParamsList = await resolveImageSizeParamsList(outputDataUrls, result.actualParamsList, outputImageSizes)
+  const { outputIds, transparentOriginalImageIds } = await storeTaskOutputImages(task, result.images)
+  const actualParamsList = result.actualParamsList
   const latestBeforeUpdate = useStore.getState().tasks.find((item) => item.id === task.id)
   if (!latestBeforeUpdate || latestBeforeUpdate.status === 'done' || (latestBeforeUpdate.status !== 'running' && !latestBeforeUpdate.falRecoverable)) {
     await deleteUnreferencedImageIds([...outputIds, ...(transparentOriginalImageIds ?? [])])
@@ -1243,6 +1171,7 @@ async function completeRecoveredFalTask(task: TaskRecord, result: Awaited<Return
     actualParamsByImage: mapActualParamsByImage(outputIds, actualParamsList),
     revisedPromptByImage: undefined,
     ...createTaskDonePatch(task, Date.now()),
+    searchGrounding: result.searchGrounding,
     falRecoverable: false,
   })
   if (!isTaskHiddenByPrivacyMode(task)) {
@@ -1290,6 +1219,10 @@ export async function initStore() {
   const storedTasks = await getAllTasks()
   legacyImageIds = new Set(await getLegacyProtectedImageIds())
   for (const id of collectLegacyImageIds(useStore.getState().legacyAgentData)) legacyImageIds.add(id)
+  const imageIds = await getAllImageIds({ includeThumbnails: true }).catch((err) => {
+    console.warn('读取图片清理列表失败', err)
+    return [] as string[]
+  })
   const { tasks: markedTasks, interruptedTasks } = markInterruptedOpenAIRunningTasks(storedTasks, Date.now())
   const interruptedTaskIds = new Set(interruptedTasks.map((task) => task.id))
   const favoriteState = useStore.getState()
@@ -1302,21 +1235,14 @@ export async function initStore() {
     useStore.getState().setDefaultFavoriteCollectionId(normalizedFavorites.defaultFavoriteCollectionId)
   }
   await Promise.all(tasks
-    .filter((task, index) => normalizedFavorites.changed || interruptedTaskIds.has(task.id) || task.rawResponsePayload !== markedTasks[index]?.rawResponsePayload)
+    .filter((task, index) => normalizedFavorites.changed || interruptedTaskIds.has(task.id) || task.rawResponsePayload !== markedTasks[index]?.rawResponsePayload || task.actualParams !== markedTasks[index]?.actualParams || task.actualParamsByImage !== markedTasks[index]?.actualParamsByImage || task.revisedPromptByImage !== markedTasks[index]?.revisedPromptByImage)
     .map((task) => putTask(task)))
   useStore.getState().setTasks(tasks)
   showSupportPromptForExistingLocalData(tasks)
-  // 客户端关闭确认用同样的判断跳过这些任务，它们重启后会继续查询结果
-  for (const task of tasks) {
-    if (isFalRecoverableTask(task)) scheduleFalRecovery(task.id, 0)
-    if (isCustomRecoverableTask(task)) scheduleCustomRecovery(task.id, 0)
-  }
-
-  // 收集所有任务引用的图片 id
-  const referencedIds = new Set<string>()
   const state = useStore.getState()
   const persistedInputImages = state.inputImages
   const galleryInputDraft = state.galleryInputDraft
+  const referencedIds = new Set<string>()
   for (const img of persistedInputImages) referencedIds.add(img.id)
   addInputDraftReferencedImageIds(referencedIds, galleryInputDraft)
   for (const id of legacyImageIds) referencedIds.add(id)
@@ -1324,24 +1250,17 @@ export async function initStore() {
     addTaskReferencedImageIds(referencedIds, t)
   }
 
-  // 只枚举 key 清理孤立图片，避免启动时把所有 4K 原图读进内存。
-  const imageIds = await getAllImageIds()
-  const referencedImageIds: string[] = []
-  for (const imgId of imageIds) {
-    if (referencedIds.has(imgId)) {
-      referencedImageIds.push(imgId)
-    } else {
-      await deleteImage(imgId)
-    }
+  const imageReads = new Map<string, Promise<string | undefined>>()
+  const readImage = (id: string) => {
+    const pending = imageReads.get(id)
+    if (pending) return pending
+    const request = getImage(id).then((image) => {
+      if (image) cacheImage(id, image.dataUrl)
+      return image?.dataUrl
+    })
+    imageReads.set(id, request)
+    return request
   }
-  const imageSourceUrls = useStore.getState().imageSourceUrls
-  if (Object.keys(imageSourceUrls).some((id) => !referencedIds.has(id))) {
-    useStore.setState({ imageSourceUrls: Object.fromEntries(Object.entries(imageSourceUrls).filter(([id]) => referencedIds.has(id))) })
-  }
-  void scheduleMissingThumbnailBackfill(referencedImageIds)
-  // 网页版旧数据的原图和缩略图以 dataUrl 字符串保存，首屏加载后在后台逐条转成 Blob
-  if (!isTauri) setTimeout(() => void migrateImagesToBlob(), 2_000)
-
   const restoredInputImages: InputImage[] = []
   for (const img of persistedInputImages) {
     if (img.dataUrl) {
@@ -1349,11 +1268,8 @@ export async function initStore() {
       cacheImage(img.id, img.dataUrl)
       continue
     }
-    const storedImage = await getImage(img.id)
-    if (storedImage?.dataUrl) {
-      restoredInputImages.push({ ...img, dataUrl: storedImage.dataUrl })
-      cacheImage(img.id, storedImage.dataUrl)
-    }
+    const dataUrl = await readImage(img.id)
+    if (dataUrl) restoredInputImages.push({ ...img, dataUrl })
   }
   if (restoredInputImages.length !== persistedInputImages.length || restoredInputImages.some((img, index) => img.dataUrl !== persistedInputImages[index]?.dataUrl)) {
     useStore.getState().setInputImages(restoredInputImages)
@@ -1367,11 +1283,8 @@ export async function initStore() {
         cacheImage(img.id, img.dataUrl)
         continue
       }
-      const storedImage = await getImage(img.id)
-      if (storedImage?.dataUrl) {
-        restoredGalleryImages.push({ ...img, dataUrl: storedImage.dataUrl })
-        cacheImage(img.id, storedImage.dataUrl)
-      }
+      const dataUrl = await readImage(img.id)
+      if (dataUrl) restoredGalleryImages.push({ ...img, dataUrl })
     }
     const restoredGalleryDraft: InputDraft = {
       ...galleryInputDraft,
@@ -1394,6 +1307,30 @@ export async function initStore() {
     }
   }
 
+  // 启动时只枚举 ID；候选孤立图片逐张核对，删除期间产生的新引用仍可恢复。
+  for (const imgId of imageIds) {
+    if (referencedIds.has(imgId)) continue
+    try {
+      await deleteStoredImageIfUnreferenced(imgId)
+    } catch (err) {
+      console.warn('清理孤立图片失败', imgId, err)
+    }
+  }
+  const currentIds = getReferencedImageIds(useStore.getState())
+  for (const id of legacyImageIds) currentIds.add(id)
+  const imageSourceUrls = useStore.getState().imageSourceUrls
+  if (Object.keys(imageSourceUrls).some((id) => !currentIds.has(id))) {
+    useStore.setState({ imageSourceUrls: Object.fromEntries(Object.entries(imageSourceUrls).filter(([id]) => currentIds.has(id))) })
+  }
+  void scheduleMissingThumbnailBackfill(imageIds.filter((id) => currentIds.has(id)))
+  // 网页版旧数据在首屏恢复后逐条转换，避免与输入图片读取争用资源。
+  if (!isTauri) setTimeout(() => void migrateImagesToBlob(), 2_000)
+
+  // 客户端关闭确认用同样的判断跳过这些任务，它们重启后会继续查询结果
+  for (const task of tasks) {
+    if (isFalRecoverableTask(task)) scheduleFalRecovery(task.id, 0)
+    if (isCustomRecoverableTask(task)) scheduleCustomRecovery(task.id, 0)
+  }
 }
 
 /** 命令行直接给出的提示词和参考图：提交时不读写输入区、遮罩和复用配置状态；多条提示词按批量提交 */
@@ -1451,10 +1388,16 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     return []
   }
 
+  const inputLimitError = getInputImageLimitError(activeProfile, inputImages.length)
+  if (inputLimitError) {
+    showToast(inputLimitError, 'error')
+    return []
+  }
+
   const normalizedParams = normalizeParamsForSettings(params, requestSettings, { hasInputImages: inputImages.length > 0 })
-  // 编辑接口不接受 SVG 参数；GIF 实测在编辑时也能正常生成
-  if (inputImages.length > 0 && normalizedParams.output_format === 'svg') {
-    showToast('SVG 只能用于文生图，请移除参考图或切换输出格式', 'error')
+  const maskDisabledReason = maskDraft && getMaskDisabledReason(activeProfile, normalizedParams.output_format)
+  if (maskDisabledReason) {
+    showToast(`${maskDisabledReason}，请移除遮罩或切换模型／格式`, 'error')
     return []
   }
 
@@ -1677,21 +1620,8 @@ function addInputDraftReferencedImageIds(target: Set<string>, draft: InputDraft 
   for (const img of draft.inputImages) addInputImageReferencedIds(target, img)
 }
 
-function addTaskReferencedImageIds(target: Set<string>, task: TaskRecord) {
-  for (const id of task.inputImageIds || []) target.add(id)
-  if (task.maskImageId) target.add(task.maskImageId)
-  if (task.markupImageId) target.add(task.markupImageId)
-  for (const id of task.outputImages || []) target.add(id)
-  for (const id of task.transparentOriginalImages || []) {
-    if (id) target.add(id)
-  }
-  for (const id of task.streamPartialImageIds || []) target.add(id)
-}
-
 async function storeTaskOutputImages(task: TaskRecord, images: string[]) {
   const outputIds: string[] = []
-  const outputDataUrls: string[] = []
-  const outputImageSizes: Array<{ width?: number; height?: number }> = []
   const transparentOriginalImageIds: string[] = []
   const storedImageIds: string[] = []
 
@@ -1711,8 +1641,6 @@ async function storeTaskOutputImages(task: TaskRecord, images: string[]) {
         } catch (err) {
           console.warn('透明背景后处理失败，已回退为原始输出', err)
           outputIds.push(original.id)
-          outputDataUrls.push(dataUrl)
-          outputImageSizes.push(original)
           transparentOriginalImageIds.push('')
           continue
         }
@@ -1722,14 +1650,10 @@ async function storeTaskOutputImages(task: TaskRecord, images: string[]) {
       storedImageIds.push(stored.id)
       cacheImage(stored.id, outputDataUrl)
       outputIds.push(stored.id)
-      outputDataUrls.push(outputDataUrl)
-      outputImageSizes.push(stored)
     }
 
     return {
       outputIds,
-      outputDataUrls,
-      outputImageSizes,
       transparentOriginalImageIds: transparentOriginalImageIds.length ? transparentOriginalImageIds : undefined,
     }
   } catch (err) {
@@ -1742,11 +1666,8 @@ async function deleteUnreferencedImageIds(imageIds: Iterable<string>) {
   const candidates = Array.from(new Set(Array.from(imageIds).filter(Boolean)))
   if (candidates.length === 0) return
 
-  const { tasks, inputImages, galleryInputDraft, privacyMode } = useStore.getState()
-  const stillUsed = new Set<string>(getPrivacySnapshotImageIds(privacyMode))
-  for (const task of tasks) addTaskReferencedImageIds(stillUsed, task)
-  addInputDraftReferencedImageIds(stillUsed, galleryInputDraft)
-  for (const img of inputImages) addInputImageReferencedIds(stillUsed, img)
+  const stillUsed = getReferencedImageIds(useStore.getState())
+  for (const id of legacyImageIds) stillUsed.add(id)
 
   for (const imgId of candidates) {
     if (stillUsed.has(imgId)) continue
@@ -1791,6 +1712,8 @@ async function executeTask(taskId: string) {
     taskExecutions.delete(taskId)
     return
   }
+  const requestController = new AbortController()
+  taskRequestControllers.set(taskId, requestController)
   const activeProfile = taskProfile ?? getActiveApiProfile(settings)
   const requestSettings = createSettingsForApiProfile(settings, activeProfile)
   const taskProvider = taskProfile?.provider ?? task.apiProvider ?? activeProfile.provider
@@ -1801,11 +1724,11 @@ async function executeTask(taskId: string) {
     ? { taskId: task.customTaskId }
     : null
 
-  if (
-    taskProvider !== 'fal' &&
-    !isAsyncCustomProviderTask(requestSettings, activeProfile, task.inputImageIds.length > 0) &&
-    !usesConcurrentImageRequests(requestSettings, activeProfile, task.params, task.inputImageIds.length > 0)
-  ) {
+  const requestExecution = getImageRequestExecution(
+    activeProfile, task.params, task.inputImageIds.length > 0,
+    getCustomProviderDefinition(requestSettings, activeProfile.provider),
+  )
+  if (taskProvider !== 'fal' && !requestExecution.isAsyncCustom && !requestExecution.concurrent) {
     scheduleOpenAIWatchdog(taskId, activeProfile.timeout, activeProfile)
   }
 
@@ -1831,6 +1754,7 @@ async function executeTask(taskId: string) {
 
     const result = await callImageApi({
       settings: requestSettings,
+      signal: requestController.signal,
       prompt: replaceImageMentionsForApi(requestPrompt, inputDataUrls.length),
       params: task.params,
       nativeTransparentBackground: task.params.transparent_output && !task.transparentOutput,
@@ -1875,13 +1799,9 @@ async function executeTask(taskId: string) {
     }
 
     // 存储输出图片
-    const { outputIds, outputDataUrls, outputImageSizes, transparentOriginalImageIds } = await storeTaskOutputImages(task, result.images)
+    const { outputIds, transparentOriginalImageIds } = await storeTaskOutputImages(task, result.images)
     const isAsyncCustomTask = taskProvider !== 'fal' && taskProvider !== 'openai' && Boolean(customTaskInfo)
-    const actualParamsList = await resolveImageSizeParamsList(
-      outputDataUrls,
-      isAsyncCustomTask ? undefined : result.actualParamsList,
-      outputImageSizes,
-    )
+    const actualParamsList = isAsyncCustomTask ? undefined : result.actualParamsList
     const actualParams = deriveGalleryActualParams(taskProvider, isAsyncCustomTask, result.actualParams, actualParamsList, outputIds.length)
     const shouldStoreRevisedPrompts = taskProvider !== 'fal' && !isAsyncCustomTask
     const actualParamsByImage = mapActualParamsByImage(outputIds, actualParamsList)
@@ -1997,6 +1917,7 @@ async function executeTask(taskId: string) {
       showTaskFailureNotification(task)
     }
   } finally {
+    if (taskRequestControllers.get(taskId) === requestController) taskRequestControllers.delete(taskId)
     if (taskExecutions.get(taskId) === execution) taskExecutions.delete(taskId)
     // 释放输入图片的内存缓存（已持久化到 IndexedDB，后续按需从 DB 加载）
     if (!taskExecutions.has(taskId)) {
@@ -2112,7 +2033,17 @@ export async function retryTask(task: TaskRecord) {
   const source = tasks.find((item) => item.id === task.id)
   if (!source || source.status === 'running' || source.falRecoverable || source.customRecoverable) return
   const activeProfile = getActiveApiProfile(settings)
+  const inputLimitError = getInputImageLimitError(activeProfile, source.inputImageIds.length)
+  if (inputLimitError) {
+    state.showToast(inputLimitError, 'error')
+    return
+  }
   const normalizedParams = normalizeParamsForSettings(source.params, settings, { hasInputImages: source.inputImageIds.length > 0 })
+  const maskDisabledReason = source.maskImageId && getMaskDisabledReason(activeProfile, normalizedParams.output_format)
+  if (maskDisabledReason) {
+    state.showToast(`${maskDisabledReason}，请移除遮罩或切换模型／格式`, 'error')
+    return
+  }
   const shouldUseTransparentOutput = normalizedParams.transparent_output && supportsTransparentOutput(settings, activeProfile, normalizedParams.output_format)
   const taskParams = shouldUseTransparentOutput
     ? getTransparentRequestParams(normalizedParams)
@@ -2176,7 +2107,7 @@ export async function retryTask(task: TaskRecord) {
     batchTaskIds.delete(taskId)
     clearOpenAIWatchdogTimer(taskId)
     clearFalRecoveryTimer(taskId)
-    clearCustomRecoveryTimer(taskId)
+    stopTaskRequest(taskId)
     useStore.getState().setTaskStreamPreview(taskId)
   }
   useStore.getState().setTasks(overwrite
@@ -2288,6 +2219,50 @@ export async function editOutputs(task: TaskRecord) {
   showToast(`已添加 ${added} 张输出图到输入`, 'success')
 }
 
+export async function removeTaskOutput(taskId: string, output: { imageId: string; requestIndex: number; error: string }) {
+  const task = useStore.getState().tasks.find((item) => item.id === taskId)
+  if (!task || task.status !== 'done') return
+  const outputs = getTaskOutputSlots(task)
+  if (outputs.length <= 1) return
+  const removed = outputs.find((slot) => slot.requestIndex === output.requestIndex && slot.imageId === output.imageId && slot.error === output.error)
+  if (!removed) return
+  const imageId = removed.imageId
+  const index = removed.outputImageIndex
+
+  const slots = outputs.filter((slot) => slot !== removed)
+  const outputImages = task.outputImages.filter((_, idx) => idx !== index)
+  const actualParamsByImage = task.actualParamsByImage ? { ...task.actualParamsByImage } : undefined
+  const revisedPromptByImage = task.revisedPromptByImage ? { ...task.revisedPromptByImage } : undefined
+  if (!outputImages.includes(imageId)) {
+    if (actualParamsByImage) delete actualParamsByImage[imageId]
+    if (revisedPromptByImage) delete revisedPromptByImage[imageId]
+  }
+  const updated: TaskRecord = {
+    ...task,
+    outputImages,
+    transparentOriginalImages: task.transparentOriginalImages?.filter((_, idx) => idx !== index),
+    actualParamsByImage,
+    revisedPromptByImage,
+    outputErrors: task.outputErrors ? slots.flatMap((slot, requestIndex) => slot.error ? [{ requestIndex, error: slot.error }] : []) : undefined,
+  }
+  useStore.setState((state) => ({ tasks: state.tasks.map((item) => item.id === taskId ? updated : item) }))
+  try {
+    await putTask(updated)
+  } catch (err) {
+    console.error('保存结果删除失败', err)
+    useStore.setState((state) => ({ tasks: state.tasks.map((item) => item === updated ? task : item) }))
+    useStore.getState().showToast('删除失败，请重试', 'error')
+    return false
+  }
+  try {
+    await deleteUnreferencedImageIds([imageId, task.transparentOriginalImages?.[index] ?? ''])
+  } catch (err) {
+    console.warn('清理已删除的结果图片失败', err)
+  }
+  useStore.getState().showToast('结果已删除', 'success')
+  return true
+}
+
 async function removeTasks(taskIds: string[]) {
   const toDelete = new Set(taskIds)
   const deletedTasks = useStore.getState().tasks.filter((task) => toDelete.has(task.id))
@@ -2302,7 +2277,7 @@ async function removeTasks(taskIds: string[]) {
   for (const task of deletedTasks) {
     addTaskReferencedImageIds(deletedImageIds, task)
     clearFalRecoveryTimer(task.id)
-    clearCustomRecoveryTimer(task.id)
+    stopTaskRequest(task.id)
     clearOpenAIWatchdogTimer(task.id)
     taskExecutions.delete(task.id)
   }
@@ -2325,11 +2300,11 @@ export async function clearFailedTasks(taskIds?: string[]) {
   const failedTasks = useStore.getState().tasks
     .filter((task) => taskMatchesFilterStatus(task, 'error') && (!targetTaskIds || targetTaskIds.has(task.id)))
   const failedTaskIds = failedTasks
-    .filter((task) => task.status === 'error')
+    .filter((task) => task.status === 'error' || task.outputImages.length === 0)
     .map((task) => task.id)
   const partialFailedTaskIds = new Set(
     failedTasks
-      .filter((task) => task.status !== 'error' && taskHasOutputErrors(task))
+      .filter((task) => task.status !== 'error' && task.outputImages.length > 0 && taskHasOutputErrors(task))
       .map((task) => task.id),
   )
 
@@ -2365,6 +2340,13 @@ export async function clearData(options: ClearOptions = { clearConfig: true, cle
   if (useStore.getState().batchProgress) endBatch(activeBatchId)
 
   if (options.clearTasks) {
+    for (const task of useStore.getState().tasks) {
+      stopTaskRequest(task.id)
+      clearFalRecoveryTimer(task.id)
+      clearOpenAIWatchdogTimer(task.id)
+      taskExecutions.delete(task.id)
+    }
+    setTasks([])
     await dbClearTasks()
     for (const id of await getAllImageIds()) {
       if (!legacyImageIds.has(id)) await deleteImage(id)
@@ -2400,15 +2382,14 @@ export async function clearData(options: ClearOptions = { clearConfig: true, cle
   showToast('所选数据已清空', 'success')
 }
 
-async function completeRecoveredCustomTask(task: TaskRecord, result: Awaited<ReturnType<typeof getCustomQueuedImageResult>>) {
+async function completeRecoveredCustomTask(task: TaskRecord, result: Awaited<ReturnType<typeof getCustomQueuedImageResult>>, signal: AbortSignal) {
   const latest = useStore.getState().tasks.find((item) => item.id === task.id)
-  if (!latest || latest.status === 'done') return
+  if (signal.aborted || !latest || latest.status === 'done') return
   if (latest.status !== 'running' && !latest.customRecoverable) return
 
-  const { outputIds, outputDataUrls, outputImageSizes, transparentOriginalImageIds } = await storeTaskOutputImages(task, result.images)
-  const actualParamsList = await resolveImageSizeParamsList(outputDataUrls, undefined, outputImageSizes)
+  const { outputIds, transparentOriginalImageIds } = await storeTaskOutputImages(task, result.images)
   const latestBeforeUpdate = useStore.getState().tasks.find((item) => item.id === task.id)
-  if (!latestBeforeUpdate || latestBeforeUpdate.status === 'done' || (latestBeforeUpdate.status !== 'running' && !latestBeforeUpdate.customRecoverable)) {
+  if (signal.aborted || !latestBeforeUpdate || latestBeforeUpdate.status === 'done' || (latestBeforeUpdate.status !== 'running' && !latestBeforeUpdate.customRecoverable)) {
     await deleteUnreferencedImageIds([...outputIds, ...(transparentOriginalImageIds ?? [])])
     return
   }
@@ -2416,22 +2397,22 @@ async function completeRecoveredCustomTask(task: TaskRecord, result: Awaited<Ret
   updateTaskInStore(task.id, {
     outputImages: outputIds,
     transparentOriginalImages: transparentOriginalImageIds,
-    actualParams: firstActualParams(actualParamsList),
-    actualParamsByImage: mapActualParamsByImage(outputIds, actualParamsList),
+    actualParams: undefined,
+    actualParamsByImage: undefined,
     revisedPromptByImage: undefined,
     ...createTaskDonePatch(task, Date.now()),
     customRecoverable: false,
   })
   if (!isTaskHiddenByPrivacyMode(task)) {
     useStore.getState().showToast(`自定义异步任务已恢复，共 ${outputIds.length} 张图片`, 'success')
-    if (!isAgentTask(task)) showTaskCompletionNotification('图像生成完成', `自定义异步任务已恢复，共 ${outputIds.length} 张图片。`)
+    showTaskCompletionNotification('图像生成完成', `自定义异步任务已恢复，共 ${outputIds.length} 张图片。`)
   }
 }
 
 async function recoverCustomTask(taskId: string) {
   const { settings, tasks } = useStore.getState()
   const task = tasks.find((item) => item.id === taskId)
-  if (!task || !task.customTaskId || task.status === 'done') return
+  if (!task || !isCustomRecoverableTask(task) || taskRequestControllers.has(taskId)) return
 
   const profile = getCustomRecoveryProfile(settings, task)
   const definition = profile ? getCustomProviderDefinition(settings, profile.provider) ?? (profile.provider === 'openai' || profile.provider === 'xai' ? OPENAI_IMAGE_TASK_PROVIDER : null) : null
@@ -2441,11 +2422,15 @@ async function recoverCustomTask(taskId: string) {
     return
   }
 
+  const controller = new AbortController()
+  taskRequestControllers.set(taskId, controller)
   try {
-    const result = await getCustomQueuedImageResult(profile, customProvider, task.customTaskId, task.params)
+    const result = await getCustomQueuedImageResult(profile, customProvider, task.customTaskId!, task.params, controller.signal)
+    if (controller.signal.aborted) return
     clearCustomRecoveryTimer(taskId)
-    await completeRecoveredCustomTask(task, result)
+    await completeRecoveredCustomTask(task, result, controller.signal)
   } catch (err) {
+    if (controller.signal.aborted) return
     clearCustomRecoveryTimer(taskId)
     if (!useStore.getState().tasks.some((item) => item.id === taskId)) return
     const error = err instanceof Error ? err.message : String(err)
@@ -2455,6 +2440,8 @@ async function recoverCustomTask(taskId: string) {
       customRecoverable: false,
     })
     showTaskFailureNotification(task)
+  } finally {
+    if (taskRequestControllers.get(taskId) === controller) taskRequestControllers.delete(taskId)
   }
 }
 
